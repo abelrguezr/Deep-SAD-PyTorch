@@ -10,22 +10,13 @@ import torch
 import numpy as np
 
 
-class UGR16Dataset(Dataset):
+class CICFlowDataset(Dataset):
     """
-    UGR16Dataset class for datasets from UGR'16: A New Dataset for the Evaluation of Cyclostationarity-Based Network IDSs (UGR16): https://nesg.ugr.es/nesg-ugr16/index.php
+    CICFlowDataset class for datasets from UGR'16: A New Dataset for the Evaluation of Cyclostationarity-Based Network IDSs (CICFlow): https://nesg.ugr.es/nesg-CICFlow/index.php
 
     Dataset class with additional targets for the semi-supervised setting and modification of __getitem__ method
     to also return the semi-supervised target as well as the index of a data sample.
     """
-
-    urls = {
-        'arrhythmia': 'https://www.dropbox.com/s/lmlwuspn1sey48r/arrhythmia.mat?dl=1',
-        'cardio': 'https://www.dropbox.com/s/galg3ihvxklf0qi/cardio.mat?dl=1',
-        'satellite': 'https://www.dropbox.com/s/dpzxp8jyr9h93k5/satellite.mat?dl=1',
-        'satimage-2': 'https://www.dropbox.com/s/hckgvu9m6fs441p/satimage-2.mat?dl=1',
-        'shuttle': 'https://www.dropbox.com/s/mk8ozgisimfn3dw/shuttle.mat?dl=1',
-        'thyroid': 'https://www.dropbox.com/s/bih0e15a0fukftb/thyroid.mat?dl=1'
-    }
 
     def __init__(self, root: str, csv_file: str, train=True, random_state=None, download=False):
         super(Dataset, self).__init__()
@@ -46,18 +37,17 @@ class UGR16Dataset(Dataset):
         #     self.download()
 
 
-        headers = ['timestamp_end','duration','src_addr','dest_addr','src_port','dest_port','protocol','flags','forwarding_status','service_type','packets','bytes','label']
+        df_chunk = pd.read_csv(self.data_file,nrows=1100000).set_index('Timestamp')
 
-        df_chunk = pd.read_csv(self.data_file,nrows=1100000, names=headers)
-
-        outliers = df_chunk['label'] != 'background'
+        outliers = df_chunk['Label'] != 'Benign'
 
 
-        # X = df_chunk.loc[:, df_chunk.columns != 'label']
-        # y = df_chunk['label'].ravel()
+
         y = outliers.values
-        X = df_chunk[['packets','bytes']].values
+        # X = df_chunk.iloc[:,0:-1].replace('Infinity',np.Infinity).apply(pd.to_numeric).to_numpy()
+        # X = np.nan_to_num(X)
 
+        X = df_chunk.iloc[:,0:-1].replace('Infinity',0).fillna(0).apply(pd.to_numeric).to_numpy()
         idx_norm = np.invert(y)
         idx_out = y
 
@@ -71,21 +61,21 @@ class UGR16Dataset(Dataset):
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-        # # Standardize data (per feature Z-normalization, i.e. zero-mean and unit variance)
-        # scaler = StandardScaler().fit(X_train)
-        # X_train_stand = scaler.transform(X_train)
-        # X_test_stand = scaler.transform(X_test)
+        # Standardize data (per feature Z-normalization, i.e. zero-mean and unit variance)
+        scaler = StandardScaler().fit(X_train)
+        X_train_stand = scaler.transform(X_train)
+        X_test_stand = scaler.transform(X_test)
 
-        # # Scale to range [0,1]
-        # minmax_scaler = MinMaxScaler().fit(X_train_stand)
-        # X_train_scaled = minmax_scaler.transform(X_train_stand)
-        # X_test_scaled = minmax_scaler.transform(X_test_stand)
+        # Scale to range [0,1]
+        minmax_scaler = MinMaxScaler().fit(X_train_stand)
+        X_train_scaled = minmax_scaler.transform(X_train_stand)
+        X_test_scaled = minmax_scaler.transform(X_test_stand)
 
         # Unscaled data for testing
-        X_train_stand = X_train
-        X_test_stand = X_test
-        X_train_scaled = X_train_stand
-        X_test_scaled = X_test_stand
+        # X_train_stand = X_train
+        # X_test_stand = X_test
+        # X_train_scaled = X_train_stand
+        # X_test_scaled = X_test_stand
 
         if self.train:
             self.data = torch.tensor(X_train_scaled, dtype=torch.float32)
@@ -114,6 +104,7 @@ class UGR16Dataset(Dataset):
     def _check_exists(self):
         return os.path.exists(self.data_file)
 
+    # TODO
     # def download(self):
     #     """Download the ODDS dataset if it doesn't exist in root already."""
 

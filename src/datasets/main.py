@@ -2,7 +2,7 @@ from .mnist import MNIST_Dataset
 from .fmnist import FashionMNIST_Dataset
 from .cifar10 import CIFAR10_Dataset
 from .odds import ODDSADDataset
-from .ugr16 import UGR16ADDataset
+from .cicflow import CICFlowADDataset
 
 
 def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_known_outlier_classes: int = 0,
@@ -11,7 +11,7 @@ def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_k
     """Loads the dataset."""
 
     implemented_datasets = ('mnist', 'fmnist', 'cifar10',
-                            'arrhythmia', 'cardio', 'satellite', 'satimage-2', 'shuttle', 'thyroid', 'ugr16')
+                            'arrhythmia', 'cardio', 'satellite', 'satimage-2', 'shuttle', 'thyroid', 'cicflow')
     assert dataset_name in implemented_datasets
 
     dataset = None
@@ -52,9 +52,9 @@ def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_k
                                 ratio_pollution=ratio_pollution,
                                 random_state=random_state)
 
-    if dataset_name == 'ugr16':
-        dataset = UGR16ADDataset(root=data_path,
-                                csv_file='march.week4.csv',
+    if dataset_name == 'cicflow':
+        dataset = CICFlowADDataset(root=data_path,
+                                csv_file='test_cicflow.csv',
                                 n_known_outlier_classes=n_known_outlier_classes,
                                 ratio_known_normal=ratio_known_normal,
                                 ratio_known_outlier=ratio_known_outlier,

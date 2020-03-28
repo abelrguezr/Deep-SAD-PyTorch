@@ -126,7 +126,7 @@ class DeepSAD(object):
         # Load the new state_dict
         self.net.load_state_dict(net_dict)
 
-    def save_model(self, export_model, save_ae=True):
+    def save_model(self, export_model, save_ae=False):
         """Save Deep SAD model to export_model."""
 
         net_dict = self.net.state_dict()

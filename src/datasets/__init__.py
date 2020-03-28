@@ -3,5 +3,5 @@ from .mnist import MNIST_Dataset
 from .fmnist import FashionMNIST_Dataset
 from .cifar10 import CIFAR10_Dataset
 from .odds import ODDSADDataset
-from .ugr16 import UGR16ADDataset
+from .cicflow import CICFlowADDataset
 from .preprocessing import *

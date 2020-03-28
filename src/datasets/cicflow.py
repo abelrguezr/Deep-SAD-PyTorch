@@ -1,12 +1,12 @@
 from torch.utils.data import DataLoader, Subset
 from base.base_dataset import BaseADDataset
-from base.ugr16_dataset import UGR16Dataset
+from base.cicflow_dataset import CICFlowDataset
 from .preprocessing import create_semisupervised_setting
 
 import torch
 
 
-class UGR16ADDataset(BaseADDataset):
+class CICFlowADDataset(BaseADDataset):
 
     def __init__(self, root: str, csv_file: str,  n_known_outlier_classes: int = 0, ratio_known_normal: float = 0.0,
                  ratio_known_outlier: float = 0.0, ratio_pollution: float = 0.0, random_state=None):
@@ -23,7 +23,7 @@ class UGR16ADDataset(BaseADDataset):
             self.known_outlier_classes = (1,)
 
         # Get train set
-        train_set = UGR16Dataset(root=self.root, csv_file=csv_file, train=True, random_state=random_state,
+        train_set = CICFlowDataset(root=self.root, csv_file=csv_file, train=True, random_state=random_state,
                                 download=True)
 
         # Create semi-supervised setting
@@ -36,7 +36,7 @@ class UGR16ADDataset(BaseADDataset):
         self.train_set = Subset(train_set, idx)
 
         # Get test set
-        self.test_set = UGR16Dataset(root=self.root, csv_file=csv_file, train=False, random_state=random_state)
+        self.test_set = CICFlowDataset(root=self.root, csv_file=csv_file, train=False, random_state=random_state)
 
     def loaders(self, batch_size: int, shuffle_train=True, shuffle_test=False, num_workers: int = 0) -> (
             DataLoader, DataLoader):

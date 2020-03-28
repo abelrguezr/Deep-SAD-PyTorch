@@ -8,3 +8,4 @@ from .layers.standard import Standardize
 from .inference.distributions import log_standard_gaussian, log_gaussian, log_standard_categorical
 from .vae import VariationalAutoencoder, Encoder, Decoder
 from .dgm import DeepGenerativeModel, StackedDeepGenerativeModel
+from .tcn import DeepTCN
