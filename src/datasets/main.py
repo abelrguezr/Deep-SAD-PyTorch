@@ -53,8 +53,7 @@ def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_k
                                 random_state=random_state)
 
     if dataset_name == 'cicflow':
-        dataset = CICFlowADDataset(root=data_path,
-                                csv_file='test_cicflow.csv',
+        dataset = CICFlowADDataset(data_path=data_path,
                                 n_known_outlier_classes=n_known_outlier_classes,
                                 ratio_known_normal=ratio_known_normal,
                                 ratio_known_outlier=ratio_known_outlier,

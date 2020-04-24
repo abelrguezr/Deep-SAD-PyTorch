@@ -51,7 +51,7 @@ def build_network(net_name, ae_net=None):
         net = MLP(x_dim=274, h_dims=[128, 64], rep_dim=32, bias=False)
 
     if net_name == 'cicflow_mlp':
-        net = MLP(x_dim=78, h_dims=[64, 32], rep_dim=16, bias=False)    
+        net = MLP(x_dim=76, h_dims=[64, 32], rep_dim=16, bias=False)    
 
     if net_name == 'cicflow_tcn':
         net = DeepTCN(num_inputs=78, num_channels=[80]+[78],rep_dim=16, bias=False)    
