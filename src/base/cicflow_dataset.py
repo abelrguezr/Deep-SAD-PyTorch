@@ -1,17 +1,16 @@
 from pathlib import Path
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset
 from scipy.io import loadmat
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from torchvision.datasets.utils import download_url
 import pandas as pd
-import itertools
 import os
 import torch
 import numpy as np
 
 
-class CICFlowDataset(IterableDataset):
+class CICFlowDataset(Dataset):
     """
     CICFlowDataset class for datasets from CICFlowMeter (https://github.com/ahlashkari/CICFlowMeter) feature extractor.
 
@@ -19,79 +18,69 @@ class CICFlowDataset(IterableDataset):
     to also return the semi-supervised target as well as the index of a data sample.
     """
     def __init__(self,
-                 data_path: str,
+                 root: str,
+                 train_dates = None,
+                 test_dates = None,
                  train=True,
                  random_state=None,
                  download=False):
-        super(IterableDataset, self).__init__()
+        super(Dataset, self).__init__()
 
         self.classes = [0, 1]
 
-        if isinstance(data_path, torch._six.string_classes):
-            data_path = os.path.expanduser(data_path)
+        if isinstance(root, torch._six.string_classes):
+            data_path = os.path.expanduser(root)
 
-        self.data_path = Path(data_path)
+        self.root = os.path.abspath(Path(root))
         self.train = train  # training set or test set
+        self.train_dates = train_dates  # training set or test set
+        self.test_dates = test_dates  # training set or test set
 
-        self.train = train  # training set or test set
+        if self.train: X, y = self._get_csv_data(train_dates)
+        else: X, y = self._get_csv_data(test_dates)
 
         # if download:
         #     self.download()
-        X, y = self._get_csv_data()
-
+        
         idx_norm = np.invert(y)
         idx_out = y
 
-        # 80% data for training and 20% for testing; keep outlier ratio
-        X_train_norm, X_test_norm, y_train_norm, y_test_norm = train_test_split(
-            X[idx_norm], y[idx_norm], test_size=0.2, shuffle=False)
+        X_norm, y_norm = X[idx_norm], y[idx_norm]
 
-        X_train_out, X_test_out, y_train_out, y_test_out = train_test_split(
-            X[idx_out], y[idx_out], test_size=0.2, shuffle=False)
-
-        X_train, X_test, y_train, y_test = train_test_split(X,
-                                                            y,
-                                                            test_size=0.2,
-                                                            shuffle=False)
+        X_out, y_out = X[idx_out], y[idx_out]
 
         # Standardize data (per feature Z-normalization, i.e. zero-mean and unit variance)
-        scaler = StandardScaler().fit(X_train)
-        X_train_stand = scaler.transform(X_train)
-        X_test_stand = scaler.transform(X_test)
+        scaler = StandardScaler().fit(X)
+        X_stand = scaler.transform(X)
 
         # Scale to range [0,1]
-        minmax_scaler = MinMaxScaler().fit(X_train_stand)
-        X_train_scaled = minmax_scaler.transform(X_train_stand)
-        X_test_scaled = minmax_scaler.transform(X_test_stand)
+        minmax_scaler = MinMaxScaler().fit(X_stand)
+        X_scaled = minmax_scaler.transform(X_stand)
 
-        if self.train:
-            self.data = torch.tensor(X_train_scaled, dtype=torch.float32)
-            self.targets = torch.tensor(y_train, dtype=torch.int64)
-        else:
-            self.data = torch.tensor(X_test_scaled, dtype=torch.float32)
-            self.targets = torch.tensor(y_test, dtype=torch.int64)
+        self.data = torch.tensor(X_scaled, dtype=torch.float32)
+        self.targets = torch.tensor(y, dtype=torch.int64)
 
         self.semi_targets = torch.zeros_like(self.targets)
 
-    def _get_csv_data(self):
+    def _get_csv_data(self, dates):
 
-        # Load csv containing the data and labeled anomalous flows
-        df_flows = pd.read_csv(self.data_path,
-                               dtype=self._get_cicflow_dtypes(),
-                               index_col='Timestamp').dropna()
+        date_str = [str(date).split()[0] for date in dates]
 
-        # Label anomalous packets as such and everything else as background
-        outliers = (df_flows['Label'].values == 'anomalous') | (
-            df_flows['Label'].values == 'suspicious')
 
-        y = outliers.astype(int)
-        X = df_flows \
-            .iloc[:,6:-4] \
-            .to_numpy()
+        X_dates_paths = [self.root+'/'+ date.replace('-', '')+'/merged_flows_flow.npy' for date in date_str]
+        y_dates_paths = [self.root+'/'+ date.replace('-', '')+'/merged_flows_label.npy' for date in date_str]
+
+        X = np.ma.row_stack(tuple(np.load(path) for path in X_dates_paths))
+        y = np.concatenate(tuple(np.load(path) for path in y_dates_paths))
+
+        # drop NaNs
+        # X = X[~np.isnan(X)]
+        # y = y[~np.isnan(X)]
+
 
         return X, y
 
-    def __iter__(self):
+    def __getitem__(self, index):
         """
         Args:
             index (int): Index
@@ -99,13 +88,13 @@ class CICFlowDataset(IterableDataset):
         Returns:
             tuple: (sample, target, semi_target, index)
         """
-        sample, target, semi_target, idx = iter(self.data), iter(
-            self.targets), iter(self.semi_targets), itertools.count()
+        sample, target, semi_target = self.data[index], int(
+            self.targets[index]), int(self.semi_targets[index])
 
+        return sample, target, semi_target, index
 
-        return zip(sample, target, semi_target, idx)
-
-
+    def __len__(self):
+        return len(self.data)
 
     def _check_exists(self):
         return os.path.exists(self.data_file)

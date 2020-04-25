@@ -2,19 +2,22 @@ from torch.utils.data import DataLoader, Subset
 from base.base_dataset import BaseADDataset
 from base.cicflow_dataset import CICFlowDataset
 from .preprocessing import create_semisupervised_setting
-
+from datetime import date, timedelta
 import torch
 
 
 class CICFlowADDataset(BaseADDataset):
     def __init__(self,
-                 data_path: str,
+                 root: str,
                  n_known_outlier_classes: int = 0,
                  ratio_known_normal: float = 0.0,
                  ratio_known_outlier: float = 0.0,
                  ratio_pollution: float = 0.0,
                  random_state=None):
-        super().__init__(data_path)
+        super().__init__(root)
+
+        self.train_dates = ['2019-11-11','2019-11-12','2019-11-13']
+        self.test_dates = ['2019-11-14','2019-11-15']
 
         # Define normal and outlier classes
         self.n_classes = 2  # 0: normal, 1: outlier
@@ -27,7 +30,8 @@ class CICFlowADDataset(BaseADDataset):
             self.known_outlier_classes = (1, )
 
         # Get train set
-        train_set = CICFlowDataset(data_path=self.root,
+        train_set = CICFlowDataset(root=self.root,
+                                   train_dates=self.train_dates,
                                    train=True,
                                    random_state=random_state)
 
@@ -43,11 +47,18 @@ class CICFlowADDataset(BaseADDataset):
         # self.train_set = Subset(train_set, idx)
         self.train_set = train_set
 
-
         # Get test set
-        self.test_set = CICFlowDataset(data_path=self.root,
+        self.test_set = CICFlowDataset(root=self.root,
                                        train=False,
+                                       test_dates=self.test_dates,
                                        random_state=random_state)
+
+    def get_period(self, start, end):
+        days_total = end_period - start_period
+        period = [
+            start_period + timedelta(days=x)
+            for x in range(days_total.days + 1)
+        ]
 
     def loaders(self,
                 batch_size: int,
