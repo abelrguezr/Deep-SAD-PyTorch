@@ -13,8 +13,8 @@ class CICFlowADDataset(BaseADDataset):
                  ratio_known_normal: float = 0.0,
                  ratio_known_outlier: float = 0.0,
                  ratio_pollution: float = 0.0,
-                 train_dates = ['2019-11-11','2019-11-12','2019-11-13'],
-                 test_dates = ['2019-11-14','2019-11-15'],
+                 train_dates = ['2019-11-11'],
+                 test_dates = ['2019-11-14'],
                  random_state=None):
         super().__init__(root)
 

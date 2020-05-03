@@ -21,7 +21,7 @@ class OCSVM(object):
         self.rho = None
         self.gamma = None
 
-        self.model = OneClassSVM(kernel=kernel, nu=nu)
+        self.model = OneClassSVM(kernel=kernel, nu=nu, verbose=True)
 
         self.hybrid = hybrid
         self.ae_net = None  # autoencoder network for the case of a hybrid model
@@ -60,7 +60,7 @@ class OCSVM(object):
         logger.info('Starting training...')
 
         # Select model via hold-out test set of 1000 samples
-        gammas = np.logspace(-7, 2, num=10, base=2)
+        gammas = np.logspace(-7, 2, num=1, base=2)
         best_auc = 0.0
 
         # Sample hold-out set from test set

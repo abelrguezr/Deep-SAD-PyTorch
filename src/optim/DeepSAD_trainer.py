@@ -2,7 +2,10 @@ from base.base_trainer import BaseTrainer
 from base.base_dataset import BaseADDataset
 from base.base_net import BaseNet
 from torch.utils.data.dataloader import DataLoader
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve
+from torch.utils.tensorboard import SummaryWriter
+
+
 
 import logging
 import time
@@ -33,6 +36,8 @@ class DeepSADTrainer(BaseTrainer):
         self.test_scores = None
 
     def train(self, dataset: BaseADDataset, net: BaseNet):
+        self.writer = SummaryWriter('{root_path}runs/{name}'.format(root_path=dataset.root,name=dataset.__class__.__name__))
+
         logger = logging.getLogger()
 
         # Get train data loader
@@ -90,6 +95,10 @@ class DeepSADTrainer(BaseTrainer):
             logger.info(f'| Epoch: {epoch + 1:03}/{self.n_epochs:03} | Train Time: {epoch_train_time:.3f}s '
                         f'| Train Loss: {epoch_loss / n_batches:.6f} |')
 
+            self.writer.add_scalar('Train/loss',
+                            epoch_loss / n_batches,
+                            epoch)            
+
         self.train_time = time.time() - start_time
         logger.info('Training Time: {:.3f}s'.format(self.train_time))
         logger.info('Finished training.')
@@ -138,11 +147,18 @@ class DeepSADTrainer(BaseTrainer):
         self.test_time = time.time() - start_time
         self.test_scores = idx_label_score
 
-        # Compute AUC
+        # Compute metrics
         _, labels, scores = zip(*idx_label_score)
         labels = np.array(labels)
         scores = np.array(scores)
+        # AUC
         self.test_auc = roc_auc_score(labels, scores)
+        # PR-curve
+        self.pr_curve = precision_recall_curve(labels, scores)
+        precision, recall, thresholds = self.pr_curve
+
+
+        self.writer.add_pr_curve('pr_curve', labels, scores, 0)
 
         # Log results
         logger.info('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
