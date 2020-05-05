@@ -181,7 +181,7 @@ def main(dataset_name, xp_path, data_path, load_config, load_model,
             {
                 "name": "contamination",
                 "type": "range",
-                "bounds": [0.0, 0.5]
+                "bounds": [0.0, 0.15]
             },
         ],
         objective_name="mean_auc",
@@ -280,7 +280,7 @@ def train_evaluate(parameterization,
                        device=device,
                        n_jobs_dataloader=n_jobs_dataloader)
 
-        test_auc = model.results['test_auc']
+        test_auc = Isoforest.results['test_auc']
 
         test_aucs.append(test_auc)
 

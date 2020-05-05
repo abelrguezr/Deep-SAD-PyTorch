@@ -5,8 +5,6 @@ from torch.utils.data.dataloader import DataLoader
 from sklearn.metrics import roc_auc_score, precision_recall_curve
 from torch.utils.tensorboard import SummaryWriter
 
-
-
 import logging
 import time
 import torch
@@ -15,12 +13,20 @@ import numpy as np
 
 
 class DeepSADTrainer(BaseTrainer):
-
-    def __init__(self, c, eta: float, optimizer_name: str = 'adam', lr: float = 0.001, n_epochs: int = 150,
-                 lr_milestones: tuple = (), batch_size: int = 128, weight_decay: float = 1e-6, device: str = 'cuda',
-                 n_jobs_dataloader: int = 0):
-        super().__init__(optimizer_name, lr, n_epochs, lr_milestones, batch_size, weight_decay, device,
-                         n_jobs_dataloader)
+    def __init__(self,
+                 c,
+                 eta: float,
+                 optimizer_name: str = 'adam',
+                 lr: float = 0.001,
+                 n_epochs: int = 150,
+                 lr_milestones: tuple = (),
+                 batch_size: int = 128,
+                 weight_decay: float = 1e-6,
+                 device: str = 'cuda',
+                 n_jobs_dataloader: int = 0,
+                 reporter=None):
+        super().__init__(optimizer_name, lr, n_epochs, lr_milestones,
+                         batch_size, weight_decay, device, n_jobs_dataloader)
 
         # Deep SAD parameters
         self.c = torch.tensor(c, device=self.device) if c is not None else None
@@ -34,23 +40,27 @@ class DeepSADTrainer(BaseTrainer):
         self.test_auc = None
         self.test_time = None
         self.test_scores = None
+        self.reporter = reporter
 
     def train(self, dataset: BaseADDataset, net: BaseNet):
-        self.writer = SummaryWriter('{root_path}runs/{name}'.format(root_path=dataset.root,name=dataset.__class__.__name__))
 
         logger = logging.getLogger()
 
         # Get train data loader
-        train_loader, _ = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+        train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+                                          num_workers=self.n_jobs_dataloader)
 
         # Set device for network
         net = net.to(self.device)
 
         # Set optimizer (Adam optimizer for now)
-        optimizer = optim.Adam(net.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        optimizer = optim.Adam(net.parameters(),
+                               lr=self.lr,
+                               weight_decay=self.weight_decay)
 
         # Set learning rate scheduler
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=self.lr_milestones, gamma=0.1)
+        scheduler = optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=self.lr_milestones, gamma=0.1)
 
         # Initialize hypersphere center c (if c not loaded)
         if self.c is None:
@@ -69,15 +79,18 @@ class DeepSADTrainer(BaseTrainer):
             epoch_start_time = time.time()
             for data in train_loader:
                 inputs, _, semi_targets, _ = data
-                inputs, semi_targets = inputs.to(self.device), semi_targets.to(self.device)
+                inputs, semi_targets = inputs.to(self.device), semi_targets.to(
+                    self.device)
 
                 # Zero the network parameter gradients
                 optimizer.zero_grad()
 
                 # Update network parameters via backpropagation: forward + backward + optimize
                 outputs = net(inputs)
-                dist = torch.sum((outputs - self.c) ** 2, dim=1)
-                losses = torch.where(semi_targets == 0, dist, self.eta * ((dist + self.eps) ** semi_targets.float()))
+                dist = torch.sum((outputs - self.c)**2, dim=1)
+                losses = torch.where(
+                    semi_targets == 0, dist,
+                    self.eta * ((dist + self.eps)**semi_targets.float()))
                 loss = torch.mean(losses)
                 loss.backward()
                 optimizer.step()
@@ -87,17 +100,17 @@ class DeepSADTrainer(BaseTrainer):
 
             scheduler.step()
             if epoch in self.lr_milestones:
-                logger.info('  LR scheduler: new learning rate is %g' % float(scheduler.get_lr()[0]))
-
+                logger.info('  LR scheduler: new learning rate is %g' %
+                            float(scheduler.get_lr()[0]))
 
             # log epoch statistics
             epoch_train_time = time.time() - epoch_start_time
-            logger.info(f'| Epoch: {epoch + 1:03}/{self.n_epochs:03} | Train Time: {epoch_train_time:.3f}s '
-                        f'| Train Loss: {epoch_loss / n_batches:.6f} |')
+            logger.info(
+                f'| Epoch: {epoch + 1:03}/{self.n_epochs:03} | Train Time: {epoch_train_time:.3f}s '
+                f'| Train Loss: {epoch_loss / n_batches:.6f} |')
 
-            self.writer.add_scalar('Train/loss',
-                            epoch_loss / n_batches,
-                            epoch)            
+            if self.reporter:
+                self._log_train(net,dataset)
 
         self.train_time = time.time() - start_time
         logger.info('Training Time: {:.3f}s'.format(self.train_time))
@@ -109,7 +122,8 @@ class DeepSADTrainer(BaseTrainer):
         logger = logging.getLogger()
 
         # Get test data loader
-        _, test_loader = dataset.loaders(batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+        _, test_loader = dataset.loaders(batch_size=self.batch_size,
+                                         num_workers=self.n_jobs_dataloader)
 
         # Set device for network
         net = net.to(self.device)
@@ -131,15 +145,18 @@ class DeepSADTrainer(BaseTrainer):
                 idx = idx.to(self.device)
 
                 outputs = net(inputs)
-                dist = torch.sum((outputs - self.c) ** 2, dim=1)
-                losses = torch.where(semi_targets == 0, dist, self.eta * ((dist + self.eps) ** semi_targets.float()))
+                dist = torch.sum((outputs - self.c)**2, dim=1)
+                losses = torch.where(
+                    semi_targets == 0, dist,
+                    self.eta * ((dist + self.eps)**semi_targets.float()))
                 loss = torch.mean(losses)
                 scores = dist
 
                 # Save triples of (idx, label, score) in a list
-                idx_label_score += list(zip(idx.cpu().data.numpy().tolist(),
-                                            labels.cpu().data.numpy().tolist(),
-                                            scores.cpu().data.numpy().tolist()))
+                idx_label_score += list(
+                    zip(idx.cpu().data.numpy().tolist(),
+                        labels.cpu().data.numpy().tolist(),
+                        scores.cpu().data.numpy().tolist()))
 
                 epoch_loss += loss.item()
                 n_batches += 1
@@ -157,14 +174,15 @@ class DeepSADTrainer(BaseTrainer):
         self.pr_curve = precision_recall_curve(labels, scores)
         precision, recall, thresholds = self.pr_curve
 
-
-        self.writer.add_pr_curve('pr_curve', labels, scores, 0)
+        # self.writer.add_pr_curve('pr_curve', labels, scores, 0)
 
         # Log results
         logger.info('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
         logger.info('Test AUC: {:.2f}%'.format(100. * self.test_auc))
         logger.info('Test Time: {:.3f}s'.format(self.test_time))
         logger.info('Finished testing.')
+
+
 
     def init_center_c(self, train_loader: DataLoader, net: BaseNet, eps=0.1):
         """Initialize hypersphere center c as the mean from an initial forward pass on the data."""
@@ -188,3 +206,11 @@ class DeepSADTrainer(BaseTrainer):
         c[(abs(c) < eps) & (c > 0)] = eps
 
         return c
+
+    def _log_train(self, net, dataset):
+
+        id_data = str(dataset.id)
+        self.test(dataset, net)
+
+        auc, pr_curve = self.test_auc, self.pr_curve
+        self.reporter(**{'auc_' + id_data: auc, 'auprc_' + id_data: pr_curve})

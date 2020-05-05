@@ -2,7 +2,6 @@ import click
 import os
 import torch
 import logging
-from filelock import FileLock
 import random
 import numpy as np
 import logging
@@ -247,7 +246,6 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
         torch.backends.cudnn.deterministic = True
         logger.info('Set seed to %d.' % cfg.settings['seed'])
 
-
     ######################################################
     #                       EXP CONFIG                   #
     ######################################################
@@ -275,24 +273,24 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
         objective_name="mean_auc",
     )
 
-    def mlp_trainable(parameterization):
-        return train_evaluate(
-        parameterization,
-        validation=validation,
-        data_path=data_path,
-        n_known_outlier_classes=n_known_outlier_classes,
-        ratio_known_normal=ratio_known_normal,
-        ratio_known_outlier=ratio_known_outlier,
-        cfg=cfg,
-        n_jobs_dataloader=n_jobs_dataloader,
-        net_name=net_name,
-        pretrain=pretrain,
-        ratio_pollution=ratio_pollution)
+    def mlp_trainable(parameterization, reporter):
+        return train_evaluate(parameterization,
+                              reporter,
+                              validation=validation,
+                              data_path=data_path,
+                              n_known_outlier_classes=n_known_outlier_classes,
+                              ratio_known_normal=ratio_known_normal,
+                              ratio_known_outlier=ratio_known_outlier,
+                              cfg=cfg,
+                              n_jobs_dataloader=n_jobs_dataloader,
+                              net_name=net_name,
+                              pretrain=pretrain,
+                              ratio_pollution=ratio_pollution)
 
     tune.run(
         mlp_trainable,
         num_samples=30,
-        resources_per_trial={'gpu':1},
+        resources_per_trial={'gpu': 1},
         search_alg=AxSearch(
             ax),  # Note that the argument here is the `AxClient`.
         verbose=
@@ -305,6 +303,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
 
 
 def train_evaluate(parameterization,
+                   reporter,
                    validation,
                    data_path,
                    n_known_outlier_classes,
@@ -315,13 +314,12 @@ def train_evaluate(parameterization,
                    n_jobs_dataloader,
                    net_name,
                    pretrain,
-                   n_splits=3):
+                   n_splits=5):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-    period = np.array(
-        ['2019-11-11', '2019-11-12'])
+    # period = np.array(
+        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13'])
+    # period = np.array(['2019-11-08','2019-11-09'])
 
     if (validation == 'kfold'):
         split = KFold(n_splits=n_splits)
@@ -338,7 +336,7 @@ def train_evaluate(parameterization,
 
     test_aucs = []
 
-    for train, test in split.split(period):
+    for train, test in (split.split(period)):
 
         dataset = CICFlowADDataset(
             root=os.path.abspath(data_path),
@@ -347,7 +345,8 @@ def train_evaluate(parameterization,
             ratio_known_outlier=ratio_known_outlier,
             train_dates=period[train],
             test_dates=period[test],
-            ratio_pollution=ratio_pollution)
+            ratio_pollution=ratio_pollution,
+            shuffle=True)
 
         # Initialize DeepSAD model and set neural network phi
 
@@ -379,7 +378,8 @@ def train_evaluate(parameterization,
                             batch_size=cfg.settings['batch_size'],
                             weight_decay=cfg.settings['weight_decay'],
                             device=device,
-                            n_jobs_dataloader=n_jobs_dataloader)
+                            n_jobs_dataloader=n_jobs_dataloader,
+                            reporter=reporter)
 
         model.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
         test_auc = model.results['test_auc']

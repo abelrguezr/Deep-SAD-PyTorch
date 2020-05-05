@@ -15,6 +15,7 @@ class CICFlowADDataset(BaseADDataset):
                  ratio_pollution: float = 0.0,
                  train_dates = ['2019-11-11'],
                  test_dates = ['2019-11-14'],
+                 shuffle = False,
                  random_state=None):
         super().__init__(root)
 
@@ -24,6 +25,8 @@ class CICFlowADDataset(BaseADDataset):
         self.n_classes = 2  # 0: normal, 1: outlier
         self.normal_classes = (0, )
         self.outlier_classes = (1, )
+        self.id = hash(",".join(self.train_dates))
+        self.shuffle = shuffle
 
         if n_known_outlier_classes == 0:
             self.known_outlier_classes = ()
@@ -63,15 +66,15 @@ class CICFlowADDataset(BaseADDataset):
 
     def loaders(self,
                 batch_size: int,
-                shuffle_train=False,
-                shuffle_test=False,
                 num_workers: int = 0) -> (DataLoader, DataLoader):
         train_loader = DataLoader(dataset=self.train_set,
                                   batch_size=batch_size,
                                   num_workers=num_workers,
-                                  drop_last=True)
+                                  drop_last=True,
+                                  shuffle=self.shuffle)
         test_loader = DataLoader(dataset=self.test_set,
                                  batch_size=batch_size,
                                  num_workers=num_workers,
-                                 drop_last=False)
+                                 drop_last=False,
+                                 shuffle=self.shuffle)
         return train_loader, test_loader
