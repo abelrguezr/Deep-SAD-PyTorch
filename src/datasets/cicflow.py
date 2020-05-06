@@ -4,6 +4,8 @@ from base.cicflow_dataset import CICFlowDataset
 from .preprocessing import create_semisupervised_setting
 from datetime import date, timedelta
 import torch
+from hashlib import blake2b
+
 
 
 class CICFlowADDataset(BaseADDataset):
@@ -25,8 +27,11 @@ class CICFlowADDataset(BaseADDataset):
         self.n_classes = 2  # 0: normal, 1: outlier
         self.normal_classes = (0, )
         self.outlier_classes = (1, )
-        self.id = hash(",".join(self.train_dates))
         self.shuffle = shuffle
+
+        h = blake2b(digest_size=5)
+        h.update(b",".join(self.train_dates)
+        self.id = h.hexdigest()
 
         if n_known_outlier_classes == 0:
             self.known_outlier_classes = ()

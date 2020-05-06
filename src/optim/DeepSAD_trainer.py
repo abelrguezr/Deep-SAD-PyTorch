@@ -2,7 +2,7 @@ from base.base_trainer import BaseTrainer
 from base.base_dataset import BaseADDataset
 from base.base_net import BaseNet
 from torch.utils.data.dataloader import DataLoader
-from sklearn.metrics import roc_auc_score, precision_recall_curve
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from torch.utils.tensorboard import SummaryWriter
 
 import logging
@@ -110,7 +110,10 @@ class DeepSADTrainer(BaseTrainer):
                 f'| Train Loss: {epoch_loss / n_batches:.6f} |')
 
             if self.reporter:
-                self._log_train(net,dataset)
+                self._log_train(net, dataset)
+                self.reporter(
+                    **
+                    {'train/loss/' + str(dataset.id): epoch_loss / n_batches})
 
         self.train_time = time.time() - start_time
         logger.info('Training Time: {:.3f}s'.format(self.train_time))
@@ -169,10 +172,12 @@ class DeepSADTrainer(BaseTrainer):
         labels = np.array(labels)
         scores = np.array(scores)
         # AUC
-        self.test_auc = roc_auc_score(labels, scores)
+        self.auc_roc = roc_auc_score(labels, scores)
         # PR-curve
         self.pr_curve = precision_recall_curve(labels, scores)
         precision, recall, thresholds = self.pr_curve
+        self.auc_pr = auc(recall, precision)
+        self.test_loss = epoch_loss / n_batches
 
         # self.writer.add_pr_curve('pr_curve', labels, scores, 0)
 
@@ -181,8 +186,6 @@ class DeepSADTrainer(BaseTrainer):
         logger.info('Test AUC: {:.2f}%'.format(100. * self.test_auc))
         logger.info('Test Time: {:.3f}s'.format(self.test_time))
         logger.info('Finished testing.')
-
-
 
     def init_center_c(self, train_loader: DataLoader, net: BaseNet, eps=0.1):
         """Initialize hypersphere center c as the mean from an initial forward pass on the data."""
@@ -207,10 +210,14 @@ class DeepSADTrainer(BaseTrainer):
 
         return c
 
-    def _log_train(self, net, dataset):
+    def _log_train(self, net, dataset, loss):
 
         id_data = str(dataset.id)
         self.test(dataset, net)
 
-        auc, pr_curve = self.test_auc, self.pr_curve
-        self.reporter(**{'auc_' + id_data: auc, 'auprc_' + id_data: pr_curve})
+        self.reporter(
+            **{
+                'test/auc_roc/' + id_data: self.auc_roc,
+                'test/auc_pr/' + id_data: self.auc_pr,
+                'test/loss/' + id_data: self.test_loss
+            })

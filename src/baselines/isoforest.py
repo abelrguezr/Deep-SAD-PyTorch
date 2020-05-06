@@ -102,7 +102,7 @@ class IsoForest(object):
         _, labels, scores = zip(*idx_label_score)
         labels = np.array(labels)
         scores = np.array(scores)
-        self.results['test_auc'] = roc_auc_score(labels, scores)
+        self.results['auc_roc'] = roc_auc_score(labels, scores)
 
         # Log results
         logger.info('Test AUC: {:.2f}%'.format(100. * self.results['test_auc']))

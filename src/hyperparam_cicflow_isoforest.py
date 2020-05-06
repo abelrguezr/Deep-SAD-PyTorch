@@ -280,7 +280,7 @@ def train_evaluate(parameterization,
                        device=device,
                        n_jobs_dataloader=n_jobs_dataloader)
 
-        test_auc = Isoforest.results['test_auc']
+        test_auc = Isoforest.results['auc_roc']
 
         test_aucs.append(test_auc)
 

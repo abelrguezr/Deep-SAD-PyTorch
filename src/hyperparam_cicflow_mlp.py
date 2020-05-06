@@ -289,6 +289,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
 
     tune.run(
         mlp_trainable,
+        name = "Hyperparam MLP"
         num_samples=30,
         resources_per_trial={'gpu': 1},
         search_alg=AxSearch(
@@ -317,7 +318,7 @@ def train_evaluate(parameterization,
                    n_splits=5):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # period = np.array(
+    period = np.array(
         ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13'])
     # period = np.array(['2019-11-08','2019-11-09'])
 
@@ -382,7 +383,7 @@ def train_evaluate(parameterization,
                             reporter=reporter)
 
         model.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
-        test_auc = model.results['test_auc']
+        test_auc = model.results['auc_roc']
 
         test_aucs.append(test_auc)
 
