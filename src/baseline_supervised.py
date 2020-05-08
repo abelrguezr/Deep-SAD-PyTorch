@@ -5,7 +5,7 @@ import random
 import numpy as np
 
 from utils.config import Config
-from baselines import Supervised
+from baselines.supervised import Supervised
 from datasets.main import load_dataset
 
 
@@ -22,7 +22,7 @@ from datasets.main import load_dataset
                 type=click.Choice([
                     'mnist_LeNet', 'fmnist_LeNet', 'cifar10_LeNet',
                     'arrhythmia_mlp', 'cardio_mlp', 'satellite_mlp',
-                    'satimage-2_mlp', 'shuttle_mlp', 'cicflow_mlp',
+                    'satimage-2_mlp', 'shuttle_mlp', 'cicflow_mlp', 'cicflow_mlp_supervised',
                     'cicflow_tcn', 'thyroid_mlp'
                 ]))
 @click.argument('xp_path', type=click.Path(exists=True))
