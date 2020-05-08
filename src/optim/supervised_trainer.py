@@ -4,7 +4,7 @@ from base.base_net import BaseNet
 from torch.utils.data.dataloader import DataLoader
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from torch.utils.tensorboard import SummaryWriter
-
+from torch.nn import BCEWithLogitsLoss
 import logging
 import time
 import torch
@@ -12,10 +12,8 @@ import torch.optim as optim
 import numpy as np
 
 
-class DeepSADTrainer(BaseTrainer):
+class SupervisedTrainer(BaseTrainer):
     def __init__(self,
-                 c,
-                 eta: float,
                  optimizer_name: str = 'adam',
                  lr: float = 0.001,
                  n_epochs: int = 150,
@@ -27,10 +25,6 @@ class DeepSADTrainer(BaseTrainer):
                  reporter=None):
         super().__init__(optimizer_name, lr, n_epochs, lr_milestones,
                          batch_size, weight_decay, device, n_jobs_dataloader)
-
-        # Deep SAD parameters
-        self.c = torch.tensor(c, device=self.device) if c is not None else None
-        self.eta = eta
 
         # Optimization parameters
         self.eps = 1e-6
@@ -62,24 +56,23 @@ class DeepSADTrainer(BaseTrainer):
         scheduler = optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=self.lr_milestones, gamma=0.1)
 
-        # Initialize hypersphere center c (if c not loaded)
-        if self.c is None:
-            logger.info('Initializing center c...')
-            self.c = self.init_center_c(train_loader, net)
-            logger.info('Center c initialized.')
+        # Set loss function
+        criterion = BCEWithLogitsLoss()
+  
 
         # Training
         logger.info('Starting training...')
         start_time = time.time()
         net.train()
+        
         for epoch in range(self.n_epochs):
-
             epoch_loss = 0.0
             n_batches = 0
             epoch_start_time = time.time()
+            
             for data in train_loader:
-                inputs, _, semi_targets, _ = data
-                inputs, semi_targets = inputs.to(self.device), semi_targets.to(
+                inputs, targets , _, _ = data
+                inputs, targets = inputs.to(self.device), targets.to(
                     self.device)
 
                 # Zero the network parameter gradients
@@ -87,11 +80,8 @@ class DeepSADTrainer(BaseTrainer):
 
                 # Update network parameters via backpropagation: forward + backward + optimize
                 outputs = net(inputs)
-                dist = torch.sum((outputs - self.c)**2, dim=1)
-                losses = torch.where(
-                    semi_targets == 0, dist,
-                    self.eta * ((dist + self.eps)**semi_targets.float()))
-                loss = torch.mean(losses)
+                targets=targets.type_as(outputs)
+                loss = criterion(outputs, targets.unsqueeze(1))
                 loss.backward()
                 optimizer.step()
 
@@ -130,6 +120,8 @@ class DeepSADTrainer(BaseTrainer):
 
         # Set device for network
         net = net.to(self.device)
+        criterion = BCEWithLogitsLoss()
+
 
         # Testing
         logger.info('Starting testing...')
@@ -148,12 +140,10 @@ class DeepSADTrainer(BaseTrainer):
                 idx = idx.to(self.device)
 
                 outputs = net(inputs)
-                dist = torch.sum((outputs - self.c)**2, dim=1)
-                losses = torch.where(
-                    semi_targets == 0, dist,
-                    self.eta * ((dist + self.eps)**semi_targets.float()))
-                loss = torch.mean(losses)
-                scores = dist
+                labels=labels.type_as(outputs)
+                loss = criterion(outputs, labels.unsqueeze(1))
+
+                scores = outputs.sigmoid()
 
                 # Save triples of (idx, label, score) in a list
                 idx_label_score += list(
@@ -179,36 +169,12 @@ class DeepSADTrainer(BaseTrainer):
         self.auc_pr = auc(recall, precision)
         self.test_loss = epoch_loss / n_batches
 
-        # self.writer.add_pr_curve('pr_curve', labels, scores, 0)
-
         # Log results
-        # logger.info('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
-        # logger.info('Test AUC: {:.2f}%'.format(100. * self.auc_roc))
-        # logger.info('Test Time: {:.3f}s'.format(self.test_time))
-        # logger.info('Finished testing.')
-
-    def init_center_c(self, train_loader: DataLoader, net: BaseNet, eps=0.1):
-        """Initialize hypersphere center c as the mean from an initial forward pass on the data."""
-        n_samples = 0
-        c = torch.zeros(net.rep_dim, device=self.device)
-
-        net.eval()
-        with torch.no_grad():
-            for data in train_loader:
-                # get the inputs of the batch
-                inputs, _, _, _ = data
-                inputs = inputs.to(self.device)
-                outputs = net(inputs)
-                n_samples += outputs.shape[0]
-                c += torch.sum(outputs, dim=0)
-
-        c /= n_samples
-
-        # If c_i is too close to 0, set to +-eps. Reason: a zero unit can be trivially matched with zero weights.
-        c[(abs(c) < eps) & (c < 0)] = -eps
-        c[(abs(c) < eps) & (c > 0)] = eps
-
-        return c
+        logger.info('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
+        logger.info('Test AUC-ROC: {:.2f}%'.format(100. * self.auc_roc))
+        logger.info('Test AUC-PR: {:.2f}%'.format(100. * self.auc_pr))
+        logger.info('Test Time: {:.3f}s'.format(self.test_time))
+        logger.info('Finished testing.')
 
     def _log_train(self, net, dataset):
 

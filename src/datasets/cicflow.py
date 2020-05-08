@@ -30,7 +30,7 @@ class CICFlowADDataset(BaseADDataset):
         self.shuffle = shuffle
 
         h = blake2b(digest_size=5)
-        h.update(b",".join(self.train_dates)
+        h.update(str.encode(",".join(self.train_dates)))
         self.id = h.hexdigest()
 
         if n_known_outlier_classes == 0:
