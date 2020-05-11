@@ -340,7 +340,7 @@ def train_evaluate(parameterization,
 
         # Initialize DeepSVDD model and set neural network phi
 
-        model = DeepSVDD(parameterization['objective'],parameterization['nu'],reporter=reporter).set_network(net_name)
+        model = DeepSVDD(parameterization['objective'],parameterization['nu']).set_network(net_name)
 
         if pretrain:
 
@@ -368,7 +368,8 @@ def train_evaluate(parameterization,
                             batch_size=cfg.settings['batch_size'],
                             weight_decay=cfg.settings['weight_decay'],
                             device=device,
-                            n_jobs_dataloader=n_jobs_dataloader)
+                            n_jobs_dataloader=n_jobs_dataloader,
+                            reporter=reporter)
 
         model.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
         test_auc = model.results['auc_roc']

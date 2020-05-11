@@ -355,8 +355,7 @@ def train_evaluate(parameterization,
 
         # Initialize DeepSAD model and set neural network phi
 
-        model = DeepSAD(parameterization['eta'],
-                        reporter=reporter).set_network(net_name)
+        model = DeepSAD(parameterization['eta']).set_network(net_name)
 
         if pretrain:
 
@@ -384,7 +383,8 @@ def train_evaluate(parameterization,
                             batch_size=cfg.settings['batch_size'],
                             weight_decay=cfg.settings['weight_decay'],
                             device=device,
-                            n_jobs_dataloader=n_jobs_dataloader)
+                            n_jobs_dataloader=n_jobs_dataloader,
+                            reporter=reporter)
 
         model.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
         test_auc = model.results['auc_roc']
