@@ -2,7 +2,7 @@ from base.base_trainer import BaseTrainer
 from base.base_dataset import BaseADDataset
 from base.base_net import BaseNet
 from torch.utils.data.dataloader import DataLoader
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 
 import logging
 import time
@@ -116,14 +116,14 @@ class DeepSVDDTrainer(BaseTrainer):
                     self.R.data = torch.tensor(get_radius(dist, self.nu),
                                                device=self.device)
 
-                loss_epoch += loss.item()
+                epoch_loss += loss.item()
                 n_batches += 1
 
             # log epoch statistics
             epoch_train_time = time.time() - epoch_start_time
             logger.info('  Epoch {}/{}\t Time: {:.3f}\t Loss: {:.8f}'.format(
                 epoch + 1, self.n_epochs, epoch_train_time,
-                loss_epoch / n_batches))
+                epoch_loss / n_batches))
 
             if self.reporter:
                 self._log_train(net, dataset)
@@ -143,6 +143,8 @@ class DeepSVDDTrainer(BaseTrainer):
 
     def test(self, dataset: BaseADDataset, net: BaseNet):
         logger = logging.getLogger()
+        epoch_loss = 0.0
+
 
         # Set device for network
         net = net.to(self.device)
@@ -164,9 +166,14 @@ class DeepSVDDTrainer(BaseTrainer):
                 dist = torch.sum((outputs - self.c)**2, dim=1)
                 if self.objective == 'soft-boundary':
                     scores = dist - self.R**2
+                    loss = self.R**2 + (1 / self.nu) * torch.mean(
+                        torch.max(torch.zeros_like(scores), scores))
                 else:
+                    loss = torch.mean(dist)
                     scores = dist
-
+                
+                epoch_loss += loss.item()
+                n_batches += 1
                 # Save triples of (idx, label, score) in a list
                 idx_label_score += list(
                     zip(idx.cpu().data.numpy().tolist(),
@@ -190,6 +197,7 @@ class DeepSVDDTrainer(BaseTrainer):
         precision, recall, thresholds = self.pr_curve
         self.auc_pr = auc(recall, precision)
         logger.info('Test set AUC: {:.2f}%'.format(100. * self.auc_roc))
+        self.test_loss = epoch_loss / n_batches
 
         logger.info('Finished testing.')
 
@@ -202,7 +210,7 @@ class DeepSVDDTrainer(BaseTrainer):
         with torch.no_grad():
             for data in train_loader:
                 # get the inputs of the batch
-                inputs, _, _ = data
+                inputs, _, _, _ = data
                 inputs = inputs.to(self.device)
                 outputs = net(inputs)
                 n_samples += outputs.shape[0]
