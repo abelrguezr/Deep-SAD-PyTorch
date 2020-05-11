@@ -6,7 +6,7 @@ import numpy as np
 
 from utils.config import Config
 from utils.visualization.plot_images_grid import plot_images_grid
-from DeepSAD import DeepSAD
+from models.DeepSAD import DeepSAD
 from datasets.main import load_dataset
 
 

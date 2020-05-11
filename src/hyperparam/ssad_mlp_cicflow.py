@@ -1,12 +1,13 @@
+import sys
 import click
 import os
 import torch
 import logging
-from filelock import FileLock
 import random
 import numpy as np
 import logging
 import ray
+sys.path.append('../')
 from ray import tune
 from ray.tune import track
 from ray.tune.suggest.ax import AxSearch
@@ -14,10 +15,9 @@ from ax.plot.contour import plot_contour
 from ax.plot.trace import optimization_trace_single_method
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
+from models.DeepSAD import DeepSAD
 from datasets.cicflow import CICFlowADDataset
 from utils.config import Config
-from utils.visualization.plot_images_grid import plot_images_grid
-from baselines.isoforest import IsoForest
 from datasets.main import load_dataset
 
 
@@ -30,6 +30,13 @@ from datasets.main import load_dataset
                     'mnist', 'fmnist', 'cifar10', 'arrhythmia', 'cardio',
                     'satellite', 'satimage-2', 'shuttle', 'thyroid', 'cicflow'
                 ]))
+@click.argument('net_name',
+                type=click.Choice([
+                    'mnist_LeNet', 'fmnist_LeNet', 'cifar10_LeNet',
+                    'arrhythmia_mlp', 'cardio_mlp', 'satellite_mlp',
+                    'satimage-2_mlp', 'shuttle_mlp', 'cicflow_mlp',
+                    'cicflow_tcn', 'thyroid_mlp'
+                ]))
 @click.argument('xp_path', type=click.Path(exists=True))
 @click.argument('data_path', type=click.Path(exists=True))
 @click.option('--load_config',
@@ -40,6 +47,10 @@ from datasets.main import load_dataset
               type=click.Path(exists=True),
               default=None,
               help='Model file path (default: None).')
+@click.option('--eta',
+              type=float,
+              default=1.0,
+              help='Deep SAD hyperparameter eta (must be 0 < eta).')
 @click.option('--ratio_known_normal',
               type=float,
               default=0.0,
@@ -55,14 +66,91 @@ from datasets.main import load_dataset
     help=
     'Pollution ratio of unlabeled training data with unknown (unlabeled) anomalies.'
 )
+@click.option('--device',
+              type=str,
+              default='cuda',
+              help='Computation device to use ("cpu", "cuda", "cuda:2", etc.).'
+              )
 @click.option('--seed',
               type=int,
               default=0,
               help='Set seed. If -1, use randomization.')
+@click.option(
+    '--optimizer_name',
+    type=click.Choice(['adam']),
+    default='adam',
+    help='Name of the optimizer to use for Deep SAD network training.')
 @click.option('--validation',
               type=click.Choice(['kfold', 'time_series', 'index']),
-              default='kfold',
+              default='index',
               help='Validation strategy.')
+@click.option(
+    '--lr',
+    type=float,
+    default=0.001,
+    help='Initial learning rate for Deep SAD network training. Default=0.001')
+@click.option('--n_epochs',
+              type=int,
+              default=50,
+              help='Number of epochs to train.')
+@click.option(
+    '--lr_milestone',
+    type=int,
+    default=0,
+    multiple=True,
+    help=
+    'Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.'
+)
+@click.option('--batch_size',
+              type=int,
+              default=128,
+              help='Batch size for mini-batch training.')
+@click.option(
+    '--weight_decay',
+    type=float,
+    default=1e-6,
+    help='Weight decay (L2 penalty) hyperparameter for Deep SAD objective.')
+@click.option('--pretrain',
+              type=bool,
+              default=True,
+              help='Pretrain neural network parameters via autoencoder.')
+@click.option('--ae_optimizer_name',
+              type=click.Choice(['adam']),
+              default='adam',
+              help='Name of the optimizer to use for autoencoder pretraining.')
+@click.option(
+    '--ae_lr',
+    type=float,
+    default=0.001,
+    help='Initial learning rate for autoencoder pretraining. Default=0.001')
+@click.option('--ae_n_epochs',
+              type=int,
+              default=100,
+              help='Number of epochs to train autoencoder.')
+@click.option(
+    '--ae_lr_milestone',
+    type=int,
+    default=0,
+    multiple=True,
+    help=
+    'Lr scheduler milestones at which lr is multiplied by 0.1. Can be multiple and must be increasing.'
+)
+@click.option('--ae_batch_size',
+              type=int,
+              default=128,
+              help='Batch size for mini-batch autoencoder training.')
+@click.option(
+    '--ae_weight_decay',
+    type=float,
+    default=1e-6,
+    help='Weight decay (L2 penalty) hyperparameter for autoencoder objective.')
+@click.option(
+    '--num_threads',
+    type=int,
+    default=0,
+    help=
+    'Number of threads used for parallelizing CPU operations. 0 means that all resources are used.'
+)
 @click.option(
     '--n_jobs_dataloader',
     type=int,
@@ -93,9 +181,12 @@ from datasets.main import load_dataset
     'If 1, outlier class as specified in --known_outlier_class option.'
     'If > 1, the specified number of outlier classes will be sampled at random.'
 )
-def main(dataset_name, xp_path, data_path, load_config, load_model,
-         ratio_known_normal, ratio_known_outlier, ratio_pollution, validation,
-         n_jobs_dataloader, normal_class, known_outlier_class, seed,
+def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
+         eta, ratio_known_normal, ratio_known_outlier, ratio_pollution, device,
+         seed, optimizer_name, validation, lr, n_epochs, lr_milestone,
+         batch_size, weight_decay, pretrain, ae_optimizer_name, ae_lr,
+         ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
+         num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
     """
     Deep SAD, a method for deep semi-supervised anomaly detection.
@@ -109,6 +200,8 @@ def main(dataset_name, xp_path, data_path, load_config, load_model,
     ######################################################
     #                  GLOBAL CONFIG                     #
     ######################################################
+
+    sys.path.append('../')
 
     xp_path = os.path.abspath(xp_path)
     data_path = os.path.abspath(data_path)
@@ -146,6 +239,7 @@ def main(dataset_name, xp_path, data_path, load_config, load_model,
     else:
         logger.info('Number of known anomaly classes: %d' %
                     n_known_outlier_classes)
+    logger.info('Network: %s' % net_name)
 
     if cfg.settings['seed'] != -1:
         random.seed(cfg.settings['seed'])
@@ -168,27 +262,23 @@ def main(dataset_name, xp_path, data_path, load_config, load_model,
         name="cicflow_mlp_experiment",
         parameters=[
             {
-                "name": "n_estimators",
+                "name": "lr",
                 "type": "range",
-                "bounds": [100, 1000],
-            },
-            {
-                "name": "max_samples",
-                "type": "range",
-                "bounds": [1e-6, 1.0],
+                "bounds": [1e-6, 0.4],
                 "log_scale": True
             },
             {
-                "name": "contamination",
+                "name": "eta",
                 "type": "range",
-                "bounds": [0.0, 0.15]
+                "bounds": [0.0, 1.5]
             },
         ],
         objective_name="mean_auc",
     )
 
-    def isoforest_trainable(parameterization):
+    def mlp_trainable(parameterization, reporter):
         return train_evaluate(parameterization,
+                              reporter,
                               validation=validation,
                               data_path=data_path,
                               n_known_outlier_classes=n_known_outlier_classes,
@@ -196,12 +286,15 @@ def main(dataset_name, xp_path, data_path, load_config, load_model,
                               ratio_known_outlier=ratio_known_outlier,
                               cfg=cfg,
                               n_jobs_dataloader=n_jobs_dataloader,
+                              net_name=net_name,
+                              pretrain=pretrain,
                               ratio_pollution=ratio_pollution)
 
     tune.run(
-        isoforest_trainable,
+        mlp_trainable,
+        name="SSAD MLP",
         num_samples=30,
-        resources_per_trial={'cpu': 4},
+        resources_per_trial={'gpu': 1},
         search_alg=AxSearch(
             ax),  # Note that the argument here is the `AxClient`.
         verbose=
@@ -214,6 +307,7 @@ def main(dataset_name, xp_path, data_path, load_config, load_model,
 
 
 def train_evaluate(parameterization,
+                   reporter,
                    validation,
                    data_path,
                    n_known_outlier_classes,
@@ -222,11 +316,15 @@ def train_evaluate(parameterization,
                    ratio_pollution,
                    cfg,
                    n_jobs_dataloader,
-                   n_splits=3):
+                   net_name,
+                   pretrain,
+                   n_splits=5):
 
-    device = 'cpu'
-
-    period = np.array(['2019-11-08','2019-11-09','2019-11-11','2019-11-12','2019-11-13'])
+    sys.path.append('../')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    period = np.array(
+        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13'])
+    # period = np.array(['2019-11-08','2019-11-09'])
 
     if (validation == 'kfold'):
         split = KFold(n_splits=n_splits)
@@ -243,7 +341,7 @@ def train_evaluate(parameterization,
 
     test_aucs = []
 
-    for train, test in split.split(period):
+    for train, test in (split.split(period)):
 
         dataset = CICFlowADDataset(
             root=os.path.abspath(data_path),
@@ -252,39 +350,48 @@ def train_evaluate(parameterization,
             ratio_known_outlier=ratio_known_outlier,
             train_dates=period[train],
             test_dates=period[test],
-            ratio_pollution=ratio_pollution)
+            ratio_pollution=ratio_pollution,
+            shuffle=True)
 
         # Initialize DeepSAD model and set neural network phi
 
-        # Log random sample of known anomaly classes if more than 1 class
-        if n_known_outlier_classes > 1:
-            logger.info('Known anomaly classes: %s' %
-                        (dataset.known_outlier_classes, ))
+        model = DeepSAD(parameterization['eta'],
+                        reporter=reporter).set_network(net_name)
 
-        # Initialize Isolation Forest model
-        Isoforest = IsoForest(hybrid=False,
-                              n_estimators=int(
-                                  parameterization['n_estimators']),
-                              max_samples=parameterization['max_samples'],
-                              contamination=parameterization['contamination'],
-                              n_jobs=4,
-                              seed=cfg.settings['seed'])
+        if pretrain:
+
+            model = model.pretrain(
+                dataset,
+                optimizer_name=cfg.settings['ae_optimizer_name'],
+                lr=parameterization['lr'],
+                n_epochs=cfg.settings['ae_n_epochs'],
+                lr_milestones=cfg.settings['ae_lr_milestone'],
+                batch_size=cfg.settings['ae_batch_size'],
+                weight_decay=cfg.settings['ae_weight_decay'],
+                device=device,
+                n_jobs_dataloader=n_jobs_dataloader)
+
+            # Save pretraining results
+            # deepSAD.save_ae_results(export_json=xp_path + '/ae_results.json')
 
         # Train model on dataset
-        Isoforest.train(dataset,
-                        device=device,
-                        n_jobs_dataloader=n_jobs_dataloader)
 
-        # Test model
-        Isoforest.test(dataset,
-                       device=device,
-                       n_jobs_dataloader=n_jobs_dataloader)
+        model = model.train(dataset,
+                            optimizer_name=cfg.settings['ae_optimizer_name'],
+                            lr=parameterization['lr'],
+                            n_epochs=cfg.settings['n_epochs'],
+                            lr_milestones=cfg.settings['lr_milestone'],
+                            batch_size=cfg.settings['batch_size'],
+                            weight_decay=cfg.settings['weight_decay'],
+                            device=device,
+                            n_jobs_dataloader=n_jobs_dataloader)
 
-        test_auc = Isoforest.results['auc_roc']
+        model.test(dataset, device=device, n_jobs_dataloader=n_jobs_dataloader)
+        test_auc = model.results['auc_roc']
 
         test_aucs.append(test_auc)
 
-    track.log(mean_auc=evaluate_aucs(test_aucs=test_aucs))
+    reporter(mean_auc=evaluate_aucs(test_aucs=test_aucs))
 
 
 def evaluate_aucs(test_aucs):

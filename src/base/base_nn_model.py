@@ -3,20 +3,16 @@ import torch
 from functools import partial
 from base.base_dataset import BaseADDataset
 from networks.main import build_network, build_autoencoder
-from optim.DeepSAD_trainer import DeepSADTrainer
 from optim.ae_trainer import AETrainer
-from ray.tune import track
 
 
-class DeepSAD(object):
-    """A class for the Deep SAD method.
-
+class BaseNNModel(object):
+    """
     Attributes:
-        eta: Deep SAD hyperparameter eta (must be 0 < eta).
         c: Hypersphere center c.
         net_name: A string indicating the name of the neural network to use.
         net: The neural network phi.
-        trainer: DeepSADTrainer to train a Deep SAD model.
+        trainer: Trainer to train a model.
         optimizer_name: A string indicating the optimizer to use for training the Deep SAD network.
         ae_net: The autoencoder network corresponding to phi for network weights pretraining.
         ae_trainer: AETrainer to train an autoencoder in pretraining.
@@ -24,18 +20,14 @@ class DeepSAD(object):
         results: A dictionary to save the results.
         ae_results: A dictionary to save the autoencoder results.
     """
-    def __init__(self, eta: float = 1.0):
-        """Inits DeepSAD with hyperparameter eta."""
+    def __init__(self, **kwargs):
 
-        self.eta = eta
         self.c = None  # hypersphere center c
+        self.__dict__.update(kwargs)
+        self.kwargs = kwargs
 
         self.net_name = None
         self.net = None  # neural network phi
-
-        self.trainer = None
-        self.optimizer_name = None
-
         self.ae_net = None  # autoencoder network for pretraining
         self.ae_trainer = None
         self.ae_optimizer_name = None
@@ -43,6 +35,7 @@ class DeepSAD(object):
         self.results = {
             'train_time': None,
             'auc_roc': None,
+            'auc_pr': None,
             'test_time': None,
             'test_scores': None,
         }
@@ -60,56 +53,27 @@ class DeepSAD(object):
 
         return self
 
-    def train(self,
-              dataset: BaseADDataset,
-              optimizer_name: str = 'adam',
-              lr: float = 0.001,
-              n_epochs: int = 50,
-              lr_milestones: tuple = (),
-              batch_size: int = 128,
-              weight_decay: float = 1e-6,
-              device: str = 'cuda',
-              n_jobs_dataloader: int = 0,
-              reporter=None):
-        """Trains the Deep SAD model on the training data."""
+    def _train(self, trainer, dataset):
+        """Trains the model on the training data."""
 
-        self.optimizer_name = optimizer_name
-        self.trainer = DeepSADTrainer(self.c,
-                                      self.eta,
-                                      optimizer_name=optimizer_name,
-                                      lr=lr,
-                                      n_epochs=n_epochs,
-                                      lr_milestones=lr_milestones,
-                                      batch_size=batch_size,
-                                      weight_decay=weight_decay,
-                                      device=device,
-                                      n_jobs_dataloader=n_jobs_dataloader,
-                                      reporter=reporter)
+        self.trainer = trainer
+
         # Get the model
-        self.net = self.trainer.train(dataset,
-                                      self.net)
+        self.net = self.trainer.train(dataset, self.net)
         self.results['train_time'] = self.trainer.train_time
         self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
-        self.reporter = reporter
 
         return self
 
-    def test(self,
-             dataset: BaseADDataset,
-             device: str = 'cuda',
-             n_jobs_dataloader: int = 0):
+    def _test(self, trainer, dataset):
         """Tests the Deep SAD model on the test data."""
 
-        if self.trainer is None:
-            self.trainer = DeepSADTrainer(self.c,
-                                          self.eta,
-                                          device=device,
-                                          n_jobs_dataloader=n_jobs_dataloader)
-
+        self.trainer = trainer
         self.trainer.test(dataset, self.net)
 
         # Get results
         self.results['auc_roc'] = self.trainer.auc_roc
+        self.results['auc_pr'] = self.trainer.auc_pr
         self.results['test_time'] = self.trainer.test_time
         self.results['test_scores'] = self.trainer.test_scores
 
@@ -182,7 +146,8 @@ class DeepSAD(object):
             {
                 'c': self.c,
                 'net_dict': net_dict,
-                'ae_net_dict': ae_net_dict
+                'ae_net_dict': ae_net_dict,
+                **self.kwargs
             }, export_model)
 
         return self
@@ -191,6 +156,9 @@ class DeepSAD(object):
         """Load Deep SAD model from model_path."""
 
         model_dict = torch.load(model_path, map_location=map_location)
+
+        for key in self.kwargs:
+            setattr(self, key, model_dict[key])
 
         self.c = model_dict['c']
         self.net.load_state_dict(model_dict['net_dict'])

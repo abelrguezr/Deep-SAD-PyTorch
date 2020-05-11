@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import click
 import os
 import torch
@@ -16,7 +18,7 @@ from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
 from utils.config import Config
 from utils.visualization.plot_images_grid import plot_images_grid
-from DeepSAD import DeepSAD
+from models.Supervised import Supervised
 from datasets.main import load_dataset
 
 
@@ -34,7 +36,7 @@ from datasets.main import load_dataset
                     'mnist_LeNet', 'fmnist_LeNet', 'cifar10_LeNet',
                     'arrhythmia_mlp', 'cardio_mlp', 'satellite_mlp',
                     'satimage-2_mlp', 'shuttle_mlp', 'cicflow_mlp',
-                    'cicflow_tcn', 'thyroid_mlp'
+                    'cicflow_mlp_supervised', 'cicflow_tcn', 'thyroid_mlp'
                 ]))
 @click.argument('xp_path', type=click.Path(exists=True))
 @click.argument('data_path', type=click.Path(exists=True))
@@ -46,10 +48,6 @@ from datasets.main import load_dataset
               type=click.Path(exists=True),
               default=None,
               help='Model file path (default: None).')
-@click.option('--eta',
-              type=float,
-              default=1.0,
-              help='Deep SAD hyperparameter eta (must be 0 < eta).')
 @click.option('--ratio_known_normal',
               type=float,
               default=0.0,
@@ -58,13 +56,6 @@ from datasets.main import load_dataset
               type=float,
               default=0.0,
               help='Ratio of known (labeled) anomalous training examples.')
-@click.option(
-    '--ratio_pollution',
-    type=float,
-    default=0.0,
-    help=
-    'Pollution ratio of unlabeled training data with unknown (unlabeled) anomalies.'
-)
 @click.option('--device',
               type=str,
               default='cuda',
@@ -181,7 +172,7 @@ from datasets.main import load_dataset
     'If > 1, the specified number of outlier classes will be sampled at random.'
 )
 def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
-         eta, ratio_known_normal, ratio_known_outlier, ratio_pollution, device,
+          ratio_known_normal, ratio_known_outlier, device,
          seed, optimizer_name, validation, lr, n_epochs, lr_milestone,
          batch_size, weight_decay, pretrain, ae_optimizer_name, ae_lr,
          ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
@@ -199,6 +190,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
     ######################################################
     #                  GLOBAL CONFIG                     #
     ######################################################
+    sys.path.append('../')
 
     xp_path = os.path.abspath(xp_path)
     data_path = os.path.abspath(data_path)
@@ -264,11 +256,6 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
                 "bounds": [1e-6, 0.4],
                 "log_scale": True
             },
-            {
-                "name": "eta",
-                "type": "range",
-                "bounds": [0.0, 1.5]
-            },
         ],
         objective_name="mean_auc",
     )
@@ -289,7 +276,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
 
     tune.run(
         mlp_trainable,
-        name = "Hyperparam MLP",
+        name="Hyperparam MLP Supervised",
         num_samples=30,
         resources_per_trial={'gpu': 1},
         search_alg=AxSearch(
@@ -349,9 +336,9 @@ def train_evaluate(parameterization,
             ratio_pollution=ratio_pollution,
             shuffle=True)
 
-        # Initialize DeepSAD model and set neural network phi
+        # Initialize Supervised model and set neural network phi
 
-        model = DeepSAD(parameterization['eta']).set_network(net_name)
+        model = Supervised().set_network(net_name)
 
         if pretrain:
 
@@ -367,7 +354,7 @@ def train_evaluate(parameterization,
                 n_jobs_dataloader=n_jobs_dataloader)
 
             # Save pretraining results
-            # deepSAD.save_ae_results(export_json=xp_path + '/ae_results.json')
+            # Supervised.save_ae_results(export_json=xp_path + '/ae_results.json')
 
         # Train model on dataset
 
@@ -387,7 +374,7 @@ def train_evaluate(parameterization,
 
         test_aucs.append(test_auc)
 
-    track.log(mean_auc=evaluate_aucs(test_aucs=test_aucs))
+    reporter(mean_auc=evaluate_aucs(test_aucs=test_aucs))
 
 
 def evaluate_aucs(test_aucs):
