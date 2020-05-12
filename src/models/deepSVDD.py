@@ -57,6 +57,6 @@ class DeepSVDD(BaseNNModel):
             self.trainer = DeepSVDDTrainer(self.objective, self.R, self.c, self.nu,
                                            device=device, n_jobs_dataloader=n_jobs_dataloader)
 
-        self._test(self.trainer)
+        self._test(self.trainer, dataset)
         # Get results
         return self

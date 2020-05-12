@@ -88,7 +88,7 @@ class DeepSVDDTrainer(BaseTrainer):
                 logger.info('  LR scheduler: new learning rate is %g' %
                             float(scheduler.get_lr()[0]))
 
-            loss_epoch = 0.0
+            epoch_loss = 0.0
             n_batches = 0
             epoch_start_time = time.time()
             for data in train_loader:
@@ -144,6 +144,8 @@ class DeepSVDDTrainer(BaseTrainer):
     def test(self, dataset: BaseADDataset, net: BaseNet):
         logger = logging.getLogger()
         epoch_loss = 0.0
+        n_batches = 0
+
 
 
         # Set device for network

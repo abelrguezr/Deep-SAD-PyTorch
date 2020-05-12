@@ -256,6 +256,11 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
                 "bounds": [1e-6, 0.4],
                 "log_scale": True
             },
+            {
+                "name": "pretrain",
+                "type": "choice",
+                "values": [False, True],
+            },
         ],
         objective_name="mean_auc",
     )
@@ -276,8 +281,8 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
 
     tune.run(
         mlp_trainable,
-        name="Hyperparam MLP Supervised",
-        num_samples=30,
+        name="MLP Supervised",
+        num_samples=10,
         resources_per_trial={'gpu': 1},
         search_alg=AxSearch(
             ax),  # Note that the argument here is the `AxClient`.
@@ -306,7 +311,7 @@ def train_evaluate(parameterization,
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     period = np.array(
-        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13'])
+        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12'])
     # period = np.array(['2019-11-08','2019-11-09'])
 
     if (validation == 'kfold'):
@@ -323,7 +328,7 @@ def train_evaluate(parameterization,
             })
 
     test_aucs = []
-
+    pretrain = parameterization['pretrain']
     for train, test in (split.split(period)):
 
         dataset = CICFlowADDataset(
