@@ -153,13 +153,13 @@ def build_autoencoder(net_name):
                                  bias=False)
 
     if net_name == 'cicflow_mlp':
-        ae_net = MLP_Autoencoder(x_dim=78,
+        ae_net = MLP_Autoencoder(x_dim=76,
                                  h_dims=[64, 32],
                                  rep_dim=16,
                                  bias=False)
     
     if net_name == 'cicflow_mlp_supervised':
-        ae_net = MLP_Autoencoder(x_dim=78,
+        ae_net = MLP_Autoencoder(x_dim=76,
                                  h_dims=[64, 32],
                                  rep_dim=1,
                                  bias=False)

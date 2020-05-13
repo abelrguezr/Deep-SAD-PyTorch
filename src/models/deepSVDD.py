@@ -30,7 +30,7 @@ class DeepSVDD(BaseNNModel):
 
         assert objective in ('one-class', 'soft-boundary'), "Objective must be either 'one-class' or 'soft-boundary'."
         assert (0 < nu) & (nu <= 1), "For hyperparameter nu, it must hold: 0 < nu <= 1."
-        super().__init__(objective=objective, nu=nu, R=0.0)
+        super().__init__(objective=objective, nu=nu, c=None,R=0.0)
 
 
 
@@ -47,6 +47,8 @@ class DeepSVDD(BaseNNModel):
         # Get the model
         self._train(self.trainer, dataset)
         self.R = float(self.trainer.R.cpu().data.numpy())  # get float
+        self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
+
 
         return self
 

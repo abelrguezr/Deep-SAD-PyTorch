@@ -9,7 +9,6 @@ from optim.ae_trainer import AETrainer
 class BaseNNModel(object):
     """
     Attributes:
-        c: Hypersphere center c.
         net_name: A string indicating the name of the neural network to use.
         net: The neural network phi.
         trainer: Trainer to train a model.
@@ -22,7 +21,6 @@ class BaseNNModel(object):
     """
     def __init__(self, **kwargs):
 
-        self.c = None  # hypersphere center c
         self.__dict__.update(kwargs)
         self.kwargs = kwargs
 
@@ -61,7 +59,6 @@ class BaseNNModel(object):
         # Get the model
         self.net = self.trainer.train(dataset, self.net)
         self.results['train_time'] = self.trainer.train_time
-        self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
 
         return self
 
@@ -144,7 +141,6 @@ class BaseNNModel(object):
 
         torch.save(
             {
-                'c': self.c,
                 'net_dict': net_dict,
                 'ae_net_dict': ae_net_dict,
                 **self.kwargs
@@ -160,7 +156,6 @@ class BaseNNModel(object):
         for key in self.kwargs:
             setattr(self, key, model_dict[key])
 
-        self.c = model_dict['c']
         self.net.load_state_dict(model_dict['net_dict'])
 
         # load autoencoder parameters if specified

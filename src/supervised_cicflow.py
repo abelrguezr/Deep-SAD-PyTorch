@@ -17,8 +17,7 @@ from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
 from utils.config import Config
-from utils.visualization.plot_images_grid import plot_images_grid
-from models.Supervised import Supervised
+from baselines.supervised import Supervised
 from datasets.main import load_dataset
 
 
@@ -221,8 +220,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
                 ratio_known_normal)
     logger.info('Ratio of labeled anomalous samples: %.2f' %
                 ratio_known_outlier)
-    logger.info('Pollution ratio of unlabeled train data: %.2f' %
-                ratio_pollution)
+
     if n_known_outlier_classes == 1:
         logger.info('Known anomaly class: %d' % known_outlier_class)
     else:
@@ -276,8 +274,8 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
                               cfg=cfg,
                               n_jobs_dataloader=n_jobs_dataloader,
                               net_name=net_name,
-                              pretrain=pretrain,
-                              ratio_pollution=ratio_pollution)
+                              pretrain=pretrain
+                              )
 
     tune.run(
         mlp_trainable,
@@ -302,12 +300,12 @@ def train_evaluate(parameterization,
                    n_known_outlier_classes,
                    ratio_known_normal,
                    ratio_known_outlier,
-                   ratio_pollution,
                    cfg,
                    n_jobs_dataloader,
                    net_name,
                    pretrain,
                    n_splits=5):
+    sys.path.append('../')
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     period = np.array(
@@ -338,7 +336,6 @@ def train_evaluate(parameterization,
             ratio_known_outlier=ratio_known_outlier,
             train_dates=period[train],
             test_dates=period[test],
-            ratio_pollution=ratio_pollution,
             shuffle=True)
 
         # Initialize Supervised model and set neural network phi

@@ -1,5 +1,4 @@
-import sys
-sys.path.append('../')
+
 import click
 import os
 import torch
@@ -16,10 +15,9 @@ from ax.plot.trace import optimization_trace_single_method
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
-from utils.config import Config
-from utils.visualization.plot_images_grid import plot_images_grid
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
+from utils.config import Config
 
 
 ################################################################################
@@ -185,7 +183,6 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
     ######################################################
     #                  GLOBAL CONFIG                     #
     ######################################################
-    sys.path.append('../')
 
     xp_path = os.path.abspath(xp_path)
     data_path = os.path.abspath(data_path)
@@ -264,6 +261,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model,
     )
 
     def mlp_trainable(parameterization, reporter):
+
         return train_evaluate(parameterization,
                               reporter,
                               validation=validation,
@@ -306,6 +304,7 @@ def train_evaluate(parameterization,
                    net_name,
                    pretrain,
                    n_splits=5):
+
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # period = np.array(

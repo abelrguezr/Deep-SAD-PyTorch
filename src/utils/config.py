@@ -3,7 +3,6 @@ import json
 
 class Config(object):
     """Base class for experimental setting/configuration."""
-
     def __init__(self, settings):
         self.settings = settings
 

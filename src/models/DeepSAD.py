@@ -18,8 +18,7 @@ class DeepSAD(BaseNNModel):
     def __init__(self, eta: float = 1.0):
         """Inits DeepSAD with hyperparameter eta."""
 
-        self.eta = eta
-        super().__init__(eta=self.eta)
+        super().__init__(eta=eta, c=None)
 
     def train(self,
               dataset: BaseADDataset,
@@ -47,6 +46,7 @@ class DeepSAD(BaseNNModel):
                                  reporter=reporter)
 
         self._train(trainer, dataset)
+        self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
 
         return self
 
@@ -63,5 +63,6 @@ class DeepSAD(BaseNNModel):
                                           n_jobs_dataloader=n_jobs_dataloader)
 
         self._test(self.trainer, dataset)
+
 
         return self
