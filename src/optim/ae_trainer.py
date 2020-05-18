@@ -20,7 +20,7 @@ class AETrainer(BaseTrainer):
 
         # Results
         self.train_time = None
-        self.test_auc = None
+        self.auc_roc = None
         self.test_time = None
 
     def train(self, dataset: BaseADDataset, ae_net: BaseNet):
@@ -127,10 +127,10 @@ class AETrainer(BaseTrainer):
         _, labels, scores = zip(*idx_label_score)
         labels = np.array(labels)
         scores = np.array(scores)
-        self.test_auc = roc_auc_score(labels, scores)
+        self.auc_roc = roc_auc_score(labels, scores)
 
         # Log results
         logger.info('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
-        logger.info('Test AUC: {:.2f}%'.format(100. * self.test_auc))
+        logger.info('Test AUC: {:.2f}%'.format(100. * self.auc_roc))
         logger.info('Test Time: {:.3f}s'.format(self.test_time))
         logger.info('Finished testing autoencoder.')

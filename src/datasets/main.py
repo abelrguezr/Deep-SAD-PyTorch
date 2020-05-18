@@ -3,6 +3,7 @@ from .fmnist import FashionMNIST_Dataset
 from .cifar10 import CIFAR10_Dataset
 from .odds import ODDSADDataset
 from .cicflow import CICFlowADDataset
+from .nsl_kdd import NSLKDDADDataset
 
 
 def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_known_outlier_classes: int = 0,
@@ -11,7 +12,7 @@ def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_k
     """Loads the dataset."""
 
     implemented_datasets = ('mnist', 'fmnist', 'cifar10',
-                            'arrhythmia', 'cardio', 'satellite', 'satimage-2', 'shuttle', 'thyroid', 'cicflow')
+                            'arrhythmia', 'cardio', 'satellite', 'satimage-2', 'shuttle', 'thyroid', 'cicflow', 'nsl_kdd')
     assert dataset_name in implemented_datasets
 
     dataset = None
@@ -54,6 +55,13 @@ def load_dataset(dataset_name, data_path, normal_class, known_outlier_class, n_k
 
     if dataset_name == 'cicflow':
         dataset = CICFlowADDataset(root=data_path,
+                                n_known_outlier_classes=n_known_outlier_classes,
+                                ratio_known_normal=ratio_known_normal,
+                                ratio_known_outlier=ratio_known_outlier,
+                                ratio_pollution=ratio_pollution)                            
+  
+    if dataset_name == 'nsl_kdd':
+        dataset = NSLKDDADDataset(root=data_path,
                                 n_known_outlier_classes=n_known_outlier_classes,
                                 ratio_known_normal=ratio_known_normal,
                                 ratio_known_outlier=ratio_known_outlier,

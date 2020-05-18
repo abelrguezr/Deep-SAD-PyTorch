@@ -15,6 +15,7 @@ from ax.plot.trace import optimization_trace_single_method
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
+from datasets.nsl_kdd import NSLKDDADDataset
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
 from utils.config import Config
@@ -328,13 +329,20 @@ def train_evaluate(parameterization,
 
     for train, test in (split.split(period)):
 
-        dataset = CICFlowADDataset(
+        # dataset = CICFlowADDataset(
+        #     root=os.path.abspath(data_path),
+        #     n_known_outlier_classes=n_known_outlier_classes,
+        #     ratio_known_normal=ratio_known_normal,
+        #     ratio_known_outlier=ratio_known_outlier,
+        #     train_dates=period[train],
+        #     test_dates=period[test],
+        #     shuffle=True)
+
+        dataset = NSLKDDADDataset(
             root=os.path.abspath(data_path),
             n_known_outlier_classes=n_known_outlier_classes,
             ratio_known_normal=ratio_known_normal,
             ratio_known_outlier=ratio_known_outlier,
-            train_dates=period[train],
-            test_dates=period[test],
             shuffle=True)
 
         # Initialize DeepSVDD model and set neural network phi
