@@ -141,6 +141,88 @@ class DeepSVDDTrainer(BaseTrainer):
 
         return net
 
+    def train_one_step(self, dataset: BaseADDataset, net: BaseNet, epoch: int):
+        logger = logging.getLogger()
+
+        # Set device for network
+        net = net.to(self.device)
+
+        # Get train data loader
+        train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+                                          num_workers=self.n_jobs_dataloader)
+
+        # Set optimizer (Adam optimizer for now)
+        optimizer = optim.Adam(net.parameters(),
+                               lr=self.lr,
+                               weight_decay=self.weight_decay,
+                               amsgrad=self.optimizer_name == 'amsgrad')
+
+        # Set learning rate scheduler
+        scheduler = optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=self.lr_milestones, gamma=0.1)
+
+        # Initialize hypersphere center c (if c not loaded)
+        if self.c is None:
+            logger.info('Initializing center c...')
+            self.c = self.init_center_c(train_loader, net)
+            logger.info('Center c initialized.')
+
+        # Training
+        logger.info('Starting training...')
+        start_time = time.time()
+        net.train()
+        
+        if(True):
+            scheduler.step()
+            if epoch in self.lr_milestones:
+                logger.info('  LR scheduler: new learning rate is %g' %
+                            float(scheduler.get_lr()[0]))
+
+            epoch_loss = 0.0
+            n_batches = 0
+            epoch_start_time = time.time()
+            for data in train_loader:
+                inputs, _, _, _ = data
+                inputs = inputs.to(self.device)
+
+                # Zero the network parameter gradients
+                optimizer.zero_grad()
+
+                # Update network parameters via backpropagation: forward + backward + optimize
+                outputs = net(inputs)
+                dist = torch.sum((outputs - self.c)**2, dim=1)
+                if self.objective == 'soft-boundary':
+                    scores = dist - self.R**2
+                    loss = self.R**2 + (1 / self.nu) * torch.mean(
+                        torch.max(torch.zeros_like(scores), scores))
+                else:
+                    loss = torch.mean(dist)
+                loss.backward()
+                optimizer.step()
+
+                # Update hypersphere radius R on mini-batch distances
+                if (self.objective == 'soft-boundary') and (
+                        epoch >= self.warm_up_n_epochs):
+                    self.R.data = torch.tensor(get_radius(dist, self.nu),
+                                               device=self.device)
+
+                epoch_loss += loss.item()
+                n_batches += 1
+
+            # log epoch statistics
+            epoch_train_time = time.time() - epoch_start_time
+            logger.info('  Epoch {}/{}\t Time: {:.3f}\t Loss: {:.8f}'.format(
+                epoch + 1, self.n_epochs, epoch_train_time,
+                epoch_loss / n_batches))
+
+
+        self.train_time = time.time() - start_time
+        logger.info('Training time: %.3f' % self.train_time)
+
+        logger.info('Finished training.')
+
+        return net
+
     def test(self, dataset: BaseADDataset, net: BaseNet):
         logger = logging.getLogger()
         epoch_loss = 0.0

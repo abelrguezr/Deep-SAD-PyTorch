@@ -29,6 +29,7 @@ class BaseNNModel(object):
         self.ae_net = None  # autoencoder network for pretraining
         self.ae_trainer = None
         self.ae_optimizer_name = None
+        self.trainer = None
 
         self.results = {
             'train_time': None,
@@ -58,6 +59,17 @@ class BaseNNModel(object):
 
         # Get the model
         self.net = self.trainer.train(dataset, self.net)
+        self.results['train_time'] = self.trainer.train_time
+
+        return self
+    
+    def _train_one_step(self, trainer, dataset, epoch):
+        """Trains the model on the training data."""
+
+        self.trainer = trainer
+
+        # Get the model
+        self.train_loss = self.trainer.train_one_step(dataset, self.net, epoch)
         self.results['train_time'] = self.trainer.train_time
 
         return self
@@ -133,7 +145,7 @@ class BaseNNModel(object):
 
         return self
 
-    def save_model(self, export_model, save_ae=False):
+    def save_model(self, export_model_path, save_ae=False):
         """Save Deep SAD model to export_model."""
 
         net_dict = self.net.state_dict()
@@ -144,7 +156,7 @@ class BaseNNModel(object):
                 'net_dict': net_dict,
                 'ae_net_dict': ae_net_dict,
                 **self.kwargs
-            }, export_model)
+            }, export_model_path)
 
         return self
 

@@ -21,6 +21,8 @@ class NSLKDDADDataset(BaseADDataset):
         self.normal_classes = (0, )
         self.outlier_classes = (1, )
         self.shuffle = shuffle
+        self.id = ""
+
 
         if n_known_outlier_classes == 0:
             self.known_outlier_classes = ()

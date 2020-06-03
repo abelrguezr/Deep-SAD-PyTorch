@@ -52,6 +52,29 @@ class DeepSVDD(BaseNNModel):
 
         return self
 
+    def set_trainer(self,
+              optimizer_name: str = 'adam',
+              lr: float = 0.001,
+              n_epochs: int = 50,
+              lr_milestones: tuple = (),
+              batch_size: int = 128,
+              weight_decay: float = 1e-6,
+              device: str = 'cuda',
+              n_jobs_dataloader: int = 0,
+              reporter=None):
+
+        if self.trainer is None:
+            self.trainer = DeepSVDDTrainer(self.objective, self.R, self.c, self.nu, optimizer_name, lr=lr,
+                                       n_epochs=n_epochs, lr_milestones=lr_milestones, batch_size=batch_size,
+                                       weight_decay=weight_decay, device=device, n_jobs_dataloader=n_jobs_dataloader,
+                                       reporter = reporter)  
+
+        return self.trainer                                    
+
+    def train_one_step(self, dataset,epoch: int = 0):
+        self._train_one_step(self.trainer, dataset, epoch)
+        return self    
+
     def test(self, dataset: BaseADDataset, device: str = 'cuda', n_jobs_dataloader: int = 0):
         """Tests the Deep SVDD model on the test data."""
 
