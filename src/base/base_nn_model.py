@@ -63,16 +63,20 @@ class BaseNNModel(object):
 
         return self
     
-    def _train_one_step(self, trainer, dataset, epoch):
+    def train_one_step(self, epoch):
         """Trains the model on the training data."""
 
-        self.trainer = trainer
-
         # Get the model
-        self.train_loss = self.trainer.train_one_step(dataset, self.net, epoch)
+        self.train_loss = self.trainer.train_one_step( self.net, epoch)
         self.results['train_time'] = self.trainer.train_time
 
         return self
+
+    def setup(self,dataset, net_name):
+        self.set_network(net_name)
+        self.trainer.setup(dataset)
+
+        return self    
 
     def _test(self, trainer, dataset):
         """Tests the Deep SAD model on the test data."""

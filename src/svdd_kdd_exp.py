@@ -20,12 +20,12 @@ from ray.tune.schedulers import ASHAScheduler
 
 class SVDDKDDExp(tune.Trainable):
     def _setup(self, cfg):
-
+        # self.training_iteration = 0
         self.dataset = NSLKDDADDataset(root=os.path.abspath(cfg['data_path']),
                                         n_known_outlier_classes=1,
                                         shuffle=True)
 
-        self.model = DeepSVDD().set_network(cfg['net_name'])
+        self.model = DeepSVDD(cfg['objective'],cfg['nu'])
         self.model.set_trainer(optimizer_name=cfg['optimizer_name'],
                                lr=cfg['lr'],
                                n_epochs=cfg['n_epochs'],
@@ -34,6 +34,7 @@ class SVDDKDDExp(tune.Trainable):
                                weight_decay=cfg['weight_decay'],
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
+        self.model.setup(self.dataset,cfg['net_name'])
 
         if cfg['pretrain']:
             self.model = self.model.pretrain(
@@ -245,7 +246,6 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     )
 
     search_alg = AxSearch(ax)
-    re_search_alg = Repeater(search_alg, repeat=n_splits)
 
     sched = ASHAScheduler(metric="ac_pr")
     analysis = tune.run(SVDDKDDExp,
@@ -255,7 +255,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
                         },
                         resources_per_trial={"gpu": 0},
                         num_samples=20,
-                        search_alg=re_search_alg,
+                        search_alg=search_alg,
                         config=exp_config)
 
     print("Best config is:", analysis.get_best_config(metric="auc_pr"))

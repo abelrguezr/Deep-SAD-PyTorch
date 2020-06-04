@@ -71,10 +71,6 @@ class DeepSVDD(BaseNNModel):
 
         return self.trainer                                    
 
-    def train_one_step(self, dataset,epoch: int = 0):
-        self._train_one_step(self.trainer, dataset, epoch)
-        return self    
-
     def test(self, dataset: BaseADDataset, device: str = 'cuda', n_jobs_dataloader: int = 0):
         """Tests the Deep SVDD model on the test data."""
 

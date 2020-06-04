@@ -20,7 +20,7 @@ from ray.tune.schedulers import ASHAScheduler
 
 class SVDDCICFlowExp(tune.Trainable):
     def _setup(self, cfg):
-
+        self.training_iteration = 0
         trial_idx = cfg['__trial_index__']
         train, test = cfg['splits'][trial_idx]
 
@@ -30,7 +30,7 @@ class SVDDCICFlowExp(tune.Trainable):
                                         test_dates=cfg['period'][test],
                                         shuffle=True)
 
-        self.model = DeepSVDD().set_network(cfg['net_name'])
+        self.model = DeepSVDD(cfg['objective'],cfg['nu'])
         self.model.set_trainer(optimizer_name=cfg['optimizer_name'],
                                lr=cfg['lr'],
                                n_epochs=cfg['n_epochs'],
@@ -39,6 +39,9 @@ class SVDDCICFlowExp(tune.Trainable):
                                weight_decay=cfg['weight_decay'],
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
+
+        self.model.setup(self.dataset,cfg['net_name'])
+                       
 
         if cfg['pretrain']:
             self.model = self.model.pretrain(

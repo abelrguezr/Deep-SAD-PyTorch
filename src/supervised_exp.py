@@ -20,7 +20,7 @@ from ray.tune.schedulers import ASHAScheduler
 
 class SupervisedCICFlowExp(tune.Trainable):
     def _setup(self, cfg):
-
+        self.training_iteration = 0
         trial_idx = cfg['__trial_index__']
         train, test = cfg['splits'][trial_idx]
 

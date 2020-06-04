@@ -141,31 +141,32 @@ class DeepSVDDTrainer(BaseTrainer):
 
         return net
 
-    def train_one_step(self, dataset: BaseADDataset, net: BaseNet, epoch: int):
-        logger = logging.getLogger()
 
-        # Set device for network
-        net = net.to(self.device)
-
-        # Get train data loader
-        train_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                          num_workers=self.n_jobs_dataloader)
-
+    def setup(self, dataset, net):  
+        if self.train_loader is None:
+            self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+                                            num_workers=self.n_jobs_dataloader)
         # Set optimizer (Adam optimizer for now)
-        optimizer = optim.Adam(net.parameters(),
+        self.optimizer = optim.Adam(net.parameters(),
                                lr=self.lr,
                                weight_decay=self.weight_decay,
                                amsgrad=self.optimizer_name == 'amsgrad')
 
         # Set learning rate scheduler
-        scheduler = optim.lr_scheduler.MultiStepLR(
+        self.scheduler = optim.lr_scheduler.MultiStepLR(
             optimizer, milestones=self.lr_milestones, gamma=0.1)
 
         # Initialize hypersphere center c (if c not loaded)
         if self.c is None:
             logger.info('Initializing center c...')
-            self.c = self.init_center_c(train_loader, net)
-            logger.info('Center c initialized.')
+            self.c = self.init_center_c(self.train_loader, net)
+            logger.info('Center c initialized.')  
+
+    def train_one_step(self, net: BaseNet, epoch: int):
+        logger = logging.getLogger()
+
+        # Set device for network
+        net = net.to(self.device)     
 
         # Training
         logger.info('Starting training...')
@@ -173,20 +174,20 @@ class DeepSVDDTrainer(BaseTrainer):
         net.train()
         
         if(True):
-            scheduler.step()
+            self.scheduler.step()
             if epoch in self.lr_milestones:
                 logger.info('  LR scheduler: new learning rate is %g' %
-                            float(scheduler.get_lr()[0]))
+                            float(self.scheduler.get_lr()[0]))
 
             epoch_loss = 0.0
             n_batches = 0
             epoch_start_time = time.time()
-            for data in train_loader:
+            for data in self.train_loader:
                 inputs, _, _, _ = data
                 inputs = inputs.to(self.device)
 
                 # Zero the network parameter gradients
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
 
                 # Update network parameters via backpropagation: forward + backward + optimize
                 outputs = net(inputs)
@@ -198,7 +199,7 @@ class DeepSVDDTrainer(BaseTrainer):
                 else:
                     loss = torch.mean(dist)
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
 
                 # Update hypersphere radius R on mini-batch distances
                 if (self.objective == 'soft-boundary') and (

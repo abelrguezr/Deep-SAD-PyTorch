@@ -36,6 +36,24 @@ class SupervisedTrainer(BaseTrainer):
         self.test_scores = None
         self.reporter = reporter
 
+
+    def setup(self, dataset, net):  
+                # Get train data loader
+        self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+                                          num_workers=self.n_jobs_dataloader)
+
+        # Set optimizer (Adam optimizer for now)
+        self.optimizer = optim.Adam(net.parameters(),
+                               lr=self.lr,
+                               weight_decay=self.weight_decay)
+
+        # Set learning rate scheduler
+        self.scheduler = optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=self.lr_milestones, gamma=0.1)
+
+        # Set loss function
+        self.criterion = BCEWithLogitsLoss()
+
     def train(self, dataset: BaseADDataset, net: BaseNet):
 
         logger = logging.getLogger()
@@ -115,25 +133,11 @@ class SupervisedTrainer(BaseTrainer):
 
         logger = logging.getLogger()
 
-        # Get train data loader
-        train_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                          num_workers=self.n_jobs_dataloader)
 
         # Set device for network
         net = net.to(self.device)
 
-        # Set optimizer (Adam optimizer for now)
-        optimizer = optim.Adam(net.parameters(),
-                               lr=self.lr,
-                               weight_decay=self.weight_decay)
-
-        # Set learning rate scheduler
-        scheduler = optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=self.lr_milestones, gamma=0.1)
-
-        # Set loss function
-        criterion = BCEWithLogitsLoss()
-  
+ 
         # Training
         logger.info('Starting training...')
         start_time = time.time()
@@ -143,7 +147,7 @@ class SupervisedTrainer(BaseTrainer):
         n_batches = 0
         epoch_start_time = time.time()
             
-        for data in train_loader:
+        for data in self.train_loader:
             inputs, targets , _, _ = data
             inputs, targets = inputs.to(self.device), targets.to(
                 self.device)
@@ -154,13 +158,13 @@ class SupervisedTrainer(BaseTrainer):
             # Update network parameters via backpropagation: forward + backward + optimize
             outputs = net(inputs)
             targets=targets.type_as(outputs)
-            loss = criterion(outputs, targets.unsqueeze(1))
+            loss = self.criterion(outputs, targets.unsqueeze(1))
             loss.backward()
-            optimizer.step()
+            self.optimizer.step()
 
             epoch_loss += loss.item()
             n_batches += 1
-            scheduler.step()
+            self.scheduler.step()
 
         if epoch in self.lr_milestones:
             logger.info('  LR scheduler: new learning rate is %g' %
