@@ -24,35 +24,17 @@ class DeepSVDD(BaseNNModel):
         ae_optimizer_name: A string indicating the optimizer to use for pretraining the autoencoder.
         results: A dictionary to save the results.
     """
-
     def __init__(self, objective: str = 'one-class', nu: float = 0.1):
         """Inits DeepSVDD with one of the two objectives and hyperparameter nu."""
 
-        assert objective in ('one-class', 'soft-boundary'), "Objective must be either 'one-class' or 'soft-boundary'."
-        assert (0 < nu) & (nu <= 1), "For hyperparameter nu, it must hold: 0 < nu <= 1."
-        super().__init__(objective=objective, nu=nu, c=None,R=0.0)
-
-
-
-    def train(self, dataset: BaseADDataset, optimizer_name: str = 'adam', lr: float = 0.001, n_epochs: int = 50,
-              lr_milestones: tuple = (), batch_size: int = 128, weight_decay: float = 1e-6, device: str = 'cuda',
-              n_jobs_dataloader: int = 0, 
-              reporter = None):
-        """Trains the Deep SVDD model on the training data."""
-
-        self.trainer = DeepSVDDTrainer(self.objective, self.R, self.c, self.nu, optimizer_name, lr=lr,
-                                       n_epochs=n_epochs, lr_milestones=lr_milestones, batch_size=batch_size,
-                                       weight_decay=weight_decay, device=device, n_jobs_dataloader=n_jobs_dataloader,
-                                       reporter = reporter)
-        # Get the model
-        self._train(self.trainer, dataset)
-        self.R = float(self.trainer.R.cpu().data.numpy())  # get float
-        self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
-
-
-        return self
-
-    def set_trainer(self,
+        assert objective in (
+            'one-class', 'soft-boundary'
+        ), "Objective must be either 'one-class' or 'soft-boundary'."
+        assert (0 < nu) & (
+            nu <= 1), "For hyperparameter nu, it must hold: 0 < nu <= 1."
+        super().__init__(objective=objective, nu=nu, c=None, R=0.0)
+    def train(self,
+              dataset: BaseADDataset,
               optimizer_name: str = 'adam',
               lr: float = 0.001,
               n_epochs: int = 50,
@@ -62,21 +44,69 @@ class DeepSVDD(BaseNNModel):
               device: str = 'cuda',
               n_jobs_dataloader: int = 0,
               reporter=None):
+        """Trains the Deep SVDD model on the training data."""
+
+        self.trainer = DeepSVDDTrainer(self.objective,
+                                       self.R,
+                                       self.c,
+                                       self.nu,
+                                       optimizer_name,
+                                       lr=lr,
+                                       n_epochs=n_epochs,
+                                       lr_milestones=lr_milestones,
+                                       batch_size=batch_size,
+                                       weight_decay=weight_decay,
+                                       device=device,
+                                       n_jobs_dataloader=n_jobs_dataloader,
+                                       reporter=reporter)
+        # Get the model
+        self._train(self.trainer, dataset)
+        self.R = float(self.trainer.R.cpu().data.numpy())  # get float
+        self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
+
+        return self
+
+    def set_trainer(self,
+                    optimizer_name: str = 'adam',
+                    lr: float = 0.001,
+                    n_epochs: int = 50,
+                    lr_milestones: tuple = (),
+                    batch_size: int = 128,
+                    weight_decay: float = 1e-6,
+                    device: str = 'cuda',
+                    n_jobs_dataloader: int = 0,
+                    reporter=None):
 
         if self.trainer is None:
-            self.trainer = DeepSVDDTrainer(self.objective, self.R, self.c, self.nu, optimizer_name, lr=lr,
-                                       n_epochs=n_epochs, lr_milestones=lr_milestones, batch_size=batch_size,
-                                       weight_decay=weight_decay, device=device, n_jobs_dataloader=n_jobs_dataloader,
-                                       reporter = reporter)  
+            self.trainer = DeepSVDDTrainer(self.objective,
+                                           self.R,
+                                           self.c,
+                                           self.nu,
+                                           optimizer_name,
+                                           lr=lr,
+                                           n_epochs=n_epochs,
+                                           lr_milestones=lr_milestones,
+                                           batch_size=batch_size,
+                                           weight_decay=weight_decay,
+                                           device=device,
+                                           n_jobs_dataloader=n_jobs_dataloader,
+                                           reporter=reporter)
 
-        return self.trainer                                    
+        return self.trainer
 
-    def test(self, dataset: BaseADDataset, device: str = 'cuda', n_jobs_dataloader: int = 0):
+    def test(self,
+             dataset: BaseADDataset,
+             device: str = 'cuda',
+             n_jobs_dataloader: int = 0):
         """Tests the Deep SVDD model on the test data."""
 
         if self.trainer is None:
-            self.trainer = DeepSVDDTrainer(self.objective, self.R, self.c, self.nu,
-                                           device=device, n_jobs_dataloader=n_jobs_dataloader)
+            self.trainer = DeepSVDDTrainer(self.objective,
+                                           self.R,
+                                           self.c,
+                                           self.nu,
+                                           device=device,
+                                           n_jobs_dataloader=n_jobs_dataloader)
 
         self._test(self.trainer, dataset)
         # Get results

@@ -58,9 +58,9 @@ class SupervisedCICFlowExp(tune.Trainable):
 
         auc_roc = self.model.results['auc_roc']
         ac_pr = self.model.results['auc_pr']
-        train_loss = self.model.train_loss
+        # train_loss = self.model.train_loss
 
-        return {"ac_pr": ac_pr, "auc_roc": auc_roc, 'train_loss': train_loss}
+        return {"ac_pr": ac_pr, "auc_roc": auc_roc}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,

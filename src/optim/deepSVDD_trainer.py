@@ -42,6 +42,7 @@ class DeepSVDDTrainer(BaseTrainer):
 
         # Optimization parameters
         self.warm_up_n_epochs = 10  # number of training epochs for soft-boundary Deep SVDD before radius R gets updated
+        self.train_loader = None
 
         # Results
         self.train_time = None
@@ -143,6 +144,7 @@ class DeepSVDDTrainer(BaseTrainer):
 
 
     def setup(self, dataset, net):  
+        logger = logging.getLogger()
         if self.train_loader is None:
             self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
                                             num_workers=self.n_jobs_dataloader)
@@ -154,7 +156,7 @@ class DeepSVDDTrainer(BaseTrainer):
 
         # Set learning rate scheduler
         self.scheduler = optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=self.lr_milestones, gamma=0.1)
+            self.optimizer, milestones=self.lr_milestones, gamma=0.1)
 
         # Initialize hypersphere center c (if c not loaded)
         if self.c is None:

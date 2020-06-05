@@ -56,14 +56,14 @@ class SVDDCICFlowExp(tune.Trainable):
                 n_jobs_dataloader=cfg["n_jobs_dataloader"])
 
     def _train(self):
-        self.model.train_one_step(self.dataset, self.training_iteration)
+        self.model.train_one_step( self.training_iteration)
         self.model.test(self.dataset)
 
         auc_roc = self.model.results['auc_roc']
         ac_pr = self.model.results['auc_pr']
-        train_loss = self.model.train_loss
+        # train_loss = self.model.train_loss
 
-        return {"ac_pr": ac_pr, "auc_roc": auc_roc, 'train_loss': train_loss}
+        return {"ac_pr": ac_pr, "auc_roc": auc_roc}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
@@ -276,7 +276,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     search_alg = AxSearch(ax)
     re_search_alg = Repeater(search_alg, repeat=n_splits)
 
-    sched = ASHAScheduler(metric="ac_pr")
+    sched = ASHAScheduler(metric="auc_pr")
     analysis = tune.run(SVDDCICFlowExp,
                         scheduler=sched,
                         stop={

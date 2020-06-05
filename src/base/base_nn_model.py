@@ -67,14 +67,14 @@ class BaseNNModel(object):
         """Trains the model on the training data."""
 
         # Get the model
-        self.train_loss = self.trainer.train_one_step( self.net, epoch)
+        self.train_loss = self.trainer.train_one_step(self.net, epoch)
         self.results['train_time'] = self.trainer.train_time
 
         return self
 
     def setup(self,dataset, net_name):
         self.set_network(net_name)
-        self.trainer.setup(dataset)
+        self.trainer.setup(dataset, self.net)
 
         return self    
 

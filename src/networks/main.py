@@ -122,7 +122,7 @@ def build_autoencoder(net_name):
                             'fmnist_DGM_M1M2', 'cifar10_LeNet',
                             'cifar10_DGM_M1M2', 'arrhythmia_mlp', 'cardio_mlp',
                             'satellite_mlp', 'satimage-2_mlp', 'shuttle_mlp',
-                            'cicflow_mlp', 'cicflow_mlp_supervised',
+                            'cicflow_mlp', 'cicflow_mlp_supervised', 'nsl_kdd_mlp','nsl_kdd_mlp_supervised',
                             'thyroid_mlp')
 
     assert net_name in implemented_networks
@@ -168,6 +168,17 @@ def build_autoencoder(net_name):
     if net_name == 'cicflow_mlp_supervised':
         ae_net = MLP_Autoencoder(x_dim=76,
                                  h_dims=[64, 32],
+                                 rep_dim=1,
+                                 bias=False)
+    if net_name == 'nsl_kdd_mlp':
+        ae_net = MLP_Autoencoder(x_dim=38,
+                                 h_dims=[32, 16],
+                                 rep_dim=8,
+                                 bias=False)
+
+    if net_name == 'nsl_kdd_mlp_supervised':
+        ae_net = MLP_Autoencoder(x_dim=38,
+                                 h_dims=[32, 16],
                                  rep_dim=1,
                                  bias=False)
 
