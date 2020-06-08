@@ -251,13 +251,17 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     )
 
     search_alg = AxSearch(ax)
+    sched = ASHAScheduler(metric="auc_pr")
 
     analysis = tune.run(SVDDKDDExp,
+                        name="SVDDKDDExp",
+                        checkpoint_at_end=True,
+                        checkpoint_freq=5,
                         stop={
-                            "training_iteration": 50,
+                            "training_iteration": 100,
                         },
                         resources_per_trial={"gpu": 1},
-                        num_samples=20,
+                        num_samples=30,
                         search_alg=search_alg,
                         config=exp_config)
 

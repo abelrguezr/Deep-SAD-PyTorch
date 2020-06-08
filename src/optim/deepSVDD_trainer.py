@@ -145,6 +145,8 @@ class DeepSVDDTrainer(BaseTrainer):
 
     def setup(self, dataset, net):  
         logger = logging.getLogger()
+        net = net.to(self.device)
+
         if self.train_loader is None:
             self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
                                             num_workers=self.n_jobs_dataloader)
@@ -168,7 +170,7 @@ class DeepSVDDTrainer(BaseTrainer):
         logger = logging.getLogger()
 
         # Set device for network
-        net = net.to(self.device)     
+        # net = net.to(self.device)     
 
         # Training
         logger.info('Starting training...')
