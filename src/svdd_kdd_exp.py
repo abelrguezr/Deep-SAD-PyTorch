@@ -20,7 +20,7 @@ from ray.tune.schedulers import ASHAScheduler
 
 class SVDDKDDExp(tune.Trainable):
     def _setup(self, cfg):
-        # self.training_iteration = 0
+        self.training_iteration = 0
         self.dataset = NSLKDDADDataset(root=os.path.abspath(cfg['data_path']),
                                         n_known_outlier_classes=1,
                                         shuffle=True)
@@ -54,9 +54,10 @@ class SVDDKDDExp(tune.Trainable):
 
         auc_roc = self.model.results['auc_roc']
         auc_pr = self.model.results['auc_pr']
+        pr_curve = self.model.trainer.pr_curve
         # train_loss = self.model.train_loss
 
-        return {"auc_pr": auc_pr, "auc_roc": auc_roc}
+        return {"auc_pr": auc_pr, "auc_roc": auc_roc, 'pr_curve': pr_curve}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
@@ -251,14 +252,19 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     )
 
     search_alg = AxSearch(ax)
+    sched = ASHAScheduler(metric="auc_pr")
 
     analysis = tune.run(SVDDKDDExp,
+                        name="SVDDKDDExp",
+                        checkpoint_at_end=True,
+                        checkpoint_freq=5,
                         stop={
-                            "training_iteration": 50,
+                            "training_iteration": 100,
                         },
                         resources_per_trial={"gpu": 1},
-                        num_samples=20,
+                        num_samples=30,
                         search_alg=search_alg,
+                        scheduler= sched,
                         config=exp_config)
 
     print("Best config is:", analysis.get_best_config(metric="auc_pr"))
