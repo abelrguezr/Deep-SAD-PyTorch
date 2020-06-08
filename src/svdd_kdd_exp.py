@@ -21,11 +21,12 @@ from ray.tune.schedulers import ASHAScheduler
 class SVDDKDDExp(tune.Trainable):
     def _setup(self, cfg):
         self.training_iteration = 0
+        self.pr_curve = None
         self.dataset = NSLKDDADDataset(root=os.path.abspath(cfg['data_path']),
-                                        n_known_outlier_classes=1,
-                                        shuffle=True)
+                                       n_known_outlier_classes=1,
+                                       shuffle=True)
 
-        self.model = DeepSVDD(cfg['objective'],cfg['nu'])
+        self.model = DeepSVDD(cfg['objective'], cfg['nu'])
         self.model.set_trainer(optimizer_name=cfg['optimizer_name'],
                                lr=cfg['lr'],
                                n_epochs=cfg['n_epochs'],
@@ -34,7 +35,7 @@ class SVDDKDDExp(tune.Trainable):
                                weight_decay=cfg['weight_decay'],
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
-        self.model.setup(self.dataset,cfg['net_name'])
+        self.model.setup(self.dataset, cfg['net_name'])
 
         if cfg['pretrain']:
             self.model = self.model.pretrain(
@@ -54,7 +55,7 @@ class SVDDKDDExp(tune.Trainable):
 
         auc_roc = self.model.results['auc_roc']
         auc_pr = self.model.results['auc_pr']
-        pr_curve = self.model.trainer.pr_curve
+        self.pr_curve = self.model.trainer.pr_curve
         # train_loss = self.model.train_loss
 
         return {"auc_pr": auc_pr, "auc_roc": auc_roc, 'pr_curve': pr_curve}
@@ -63,11 +64,12 @@ class SVDDKDDExp(tune.Trainable):
         checkpoint_path = os.path.join(checkpoint_dir,
                                        str(self.trial_id) + "_model.pth")
         self.model.save_model(checkpoint_path)
+        pickle.dump(self.pr_curve,
+                    open(os.path.join(checkpoint_dir, 'pr_curve.pkl'), "wb"))
         return checkpoint_path
 
     def _restore(self, checkpoint_path):
         self.model.load_model(checkpoint_path)
-
 
 
 ################################################################################
@@ -208,7 +210,6 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
 
     data_path = os.path.abspath(data_path)
 
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     exp_config = {
         **locals().copy(),
@@ -252,7 +253,9 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     )
 
     search_alg = AxSearch(ax)
-    sched = ASHAScheduler(metric="auc_pr")
+    sched = ASHAScheduler(time_attr='training_iteration',
+                          grace_period=10,
+                          metric="auc_pr")
 
     analysis = tune.run(SVDDKDDExp,
                         name="SVDDKDDExp",
@@ -264,7 +267,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
                         resources_per_trial={"gpu": 1},
                         num_samples=30,
                         search_alg=search_alg,
-                        scheduler= sched,
+                        scheduler=sched,
                         config=exp_config)
 
     print("Best config is:", analysis.get_best_config(metric="auc_pr"))

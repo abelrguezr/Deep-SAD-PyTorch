@@ -60,10 +60,10 @@ class SVDDCICFlowExp(tune.Trainable):
         self.model.test(self.dataset)
 
         auc_roc = self.model.results['auc_roc']
-        ac_pr = self.model.results['auc_pr']
+        auc_pr = self.model.results['auc_pr']
         # train_loss = self.model.train_loss
 
-        return {"ac_pr": ac_pr, "auc_roc": auc_roc}
+        return {"auc_pr": auc_pr, "auc_roc": auc_roc}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
@@ -262,7 +262,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
             {
                 "name": "nu",
                 "type": "range",
-                "bounds": [0.0, 0.2]
+                "bounds": [0.001, 0.2]
             },
             {
                 "name": "objective",
