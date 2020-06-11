@@ -11,11 +11,9 @@ import numpy as np
 
 
 class NSLKDDDataset(Dataset):
-   
     def __init__(self,
                  root: str,
-                 train_dates = None,
-                 test_dates = None,
+                 idx=None,
                  train=True,
                  random_state=None,
                  download=False):
@@ -28,13 +26,11 @@ class NSLKDDDataset(Dataset):
 
         self.root = os.path.abspath(Path(root))
         self.train = train  # training set or test set
-
-
-        X, y = self._get_csv_data(train)
+        X, y = self._get_csv_data(train, idx)
 
         # if download:
         #     self.download()
-        
+
         idx_norm = np.invert(y)
         idx_out = y
 
@@ -55,21 +51,22 @@ class NSLKDDDataset(Dataset):
 
         self.semi_targets = torch.zeros_like(self.targets)
 
-    def _get_csv_data(self, train=True):
+    def _get_csv_data(self, train=True, idx=None):
 
         if train: path = self.root + '/KDDTrain+.csv'
-        else: path = self.root + '/KDDTest+.csv' 
+        else: path = self.root + '/KDDTest+.csv'
 
         header_df = pd.read_csv(self.root + '/Field Names.csv', header=None)
-        headers = header_df.iloc[:,0].to_list() + ['label', 'unknown']  
-        df = pd.read_csv(path, names=headers).drop(['protocol_type','service','flag'],axis=1)
+        headers = header_df.iloc[:, 0].to_list() + ['label', 'unknown']
+        df = pd.read_csv(path, names=headers).drop(
+            ['protocol_type', 'service', 'flag'], axis=1)
 
-        X = df.iloc[:,:-2].to_numpy()
-        y = df['label'] != 'normal'
+        X = df.iloc[:, :-2].to_numpy()
+        y = np.array(df['label'] != 'normal')
 
-        # drop NaNs
-        # X = X[~np.isnan(X)]
-        # y = y[~np.isnan(X)]
+        if (idx is not None) and train:
+            X = X[idx]
+            y = y[idx]
 
         return X, y
 

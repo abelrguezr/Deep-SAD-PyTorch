@@ -1,16 +1,19 @@
 import click
 import os
+import pandas as pd
 import torch
 import logging
 import random
 import numpy as np
 import logging
 import ray
+import pickle
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from ray import tune
 from ray.tune import track
 from ray.tune.suggest.ax import AxSearch
 from ax.service.ax_client import AxClient
-from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
+from sklearn.model_selection import KFold
 from datasets.nsl_kdd import NSLKDDADDataset
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
@@ -21,9 +24,18 @@ from ray.tune.schedulers import ASHAScheduler
 class SVDDKDDExp(tune.Trainable):
     def _setup(self, cfg):
         self.training_iteration = 0
-        self.pr_curve = None
+        self.test_labels = None
+        self.val_labels = None
+        self.val_scores = None
+        self.test_scores = None
+
+        trial_idx = cfg['__trial_index__']
+        self.idx_train, self.idx_val = cfg['kf_idx'][trial_idx]
+
         self.dataset = NSLKDDADDataset(root=os.path.abspath(cfg['data_path']),
                                        n_known_outlier_classes=1,
+                                       idx_train=self.idx_train,
+                                       idx_val=self.idx_val,
                                        shuffle=True)
 
         self.model = DeepSVDD(cfg['objective'], cfg['nu'])
@@ -51,21 +63,39 @@ class SVDDKDDExp(tune.Trainable):
 
     def _train(self):
         self.model.train_one_step(self.training_iteration)
-        self.model.test(self.dataset)
+        self.model.test(self.dataset, val=True)
+        self.model.test(self.dataset, val=False)
 
-        auc_roc = self.model.results['auc_roc']
-        auc_pr = self.model.results['auc_pr']
-        self.pr_curve = self.model.trainer.pr_curve
-        # train_loss = self.model.train_loss
+        val_labels, val_scores, _ = self.model.trainer.get_results("val")
+        test_labels, test_scores, _ = self.model.trainer.get_results("test")
 
-        return {"auc_pr": auc_pr, "auc_roc": auc_roc, 'pr_curve': pr_curve}
+        results = locals().copy()
+        del results["self"]
+
+        self.results = results
+
+        rocs = {
+            phase + '_auc_roc': roc_auc_score(labels, scores)
+            for phase in ["val", "test"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+        }
+
+        prs = {
+            phase + '_auc_pr': auc(recall, precision)
+            for phase in ["val", "test"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        return {**rocs, **prs}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
                                        str(self.trial_id) + "_model.pth")
         self.model.save_model(checkpoint_path)
-        pickle.dump(self.pr_curve,
-                    open(os.path.join(checkpoint_dir, 'pr_curve.pkl'), "wb"))
+        pickle.dump(self.results,
+                    open(os.path.join(checkpoint_dir, 'results.pkl'), "wb"))
         return checkpoint_path
 
     def _restore(self, checkpoint_path):
@@ -209,6 +239,11 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     ray.init(address='auto')
 
     data_path = os.path.abspath(data_path)
+    n_splits = 5
+
+    kf = KFold(n_splits)
+    r = np.array(range(_get_len(data_path)))
+    kf_idx = [i for i in kf.split(r)]
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     exp_config = {
@@ -253,6 +288,8 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
     )
 
     search_alg = AxSearch(ax)
+    re_search_alg = Repeater(search_alg, repeat=n_splits)
+
     sched = ASHAScheduler(time_attr='training_iteration',
                           grace_period=10,
                           metric="auc_pr")
@@ -266,11 +303,23 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
                         },
                         resources_per_trial={"gpu": 1},
                         num_samples=30,
-                        search_alg=search_alg,
+                        search_alg=re_search_alg,
                         scheduler=sched,
                         config=exp_config)
 
-    print("Best config is:", analysis.get_best_config(metric="auc_pr"))
+    print("Best config is:", analysis.get_best_config(metric="val_auc_pr"))
+
+
+def _get_len(root):
+    path = root + '/KDDTrain+.csv'
+
+    header_df = pd.read_csv(root + '/Field Names.csv', header=None)
+    headers = header_df.iloc[:, 0].to_list() + ['label', 'unknown']
+    df = pd.read_csv(path,
+                     names=headers).drop(['protocol_type', 'service', 'flag'],
+                                         axis=1)
+
+    return len(df.index)
 
 
 if __name__ == '__main__':

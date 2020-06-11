@@ -13,6 +13,8 @@ class NSLKDDADDataset(BaseADDataset):
                  ratio_known_outlier: float = 0.0,
                  ratio_pollution: float = 0.0,
                  shuffle=False,
+                 idx_train=None,
+                 idx_val = None,
                  random_state=None):
         super().__init__(root)
 
@@ -32,6 +34,7 @@ class NSLKDDADDataset(BaseADDataset):
         # Get train set
         train_set = NSLKDDDataset(root=self.root,
                                   train=True,
+                                  idx=idx_train,
                                   random_state=random_state)
 
         # Create semi-supervised setting
@@ -45,6 +48,10 @@ class NSLKDDADDataset(BaseADDataset):
         # Subset train_set to semi-supervised setup
         # self.train_set = Subset(train_set, idx)
         self.train_set = train_set
+        self.val_set = NSLKDDDataset(root=self.root,
+                                  train=True,
+                                  idx=idx_val,
+                                  random_state=random_state)
 
         # Get test set
         self.test_set = NSLKDDDataset(root=self.root,
@@ -59,9 +66,14 @@ class NSLKDDADDataset(BaseADDataset):
                                   num_workers=num_workers,
                                   drop_last=True,
                                   shuffle=self.shuffle)
+        val_loader = DataLoader(dataset=self.val_set,
+                                  batch_size=batch_size,
+                                  num_workers=num_workers,
+                                  drop_last=True,
+                                  shuffle=self.shuffle)
         test_loader = DataLoader(dataset=self.test_set,
                                  batch_size=batch_size,
                                  num_workers=num_workers,
                                  drop_last=False,
                                  shuffle=self.shuffle)
-        return train_loader, test_loader
+        return train_loader, val_loader, test_loader

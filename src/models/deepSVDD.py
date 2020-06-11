@@ -97,6 +97,7 @@ class DeepSVDD(BaseNNModel):
     def test(self,
              dataset: BaseADDataset,
              device: str = 'cuda',
+             val=False,
              n_jobs_dataloader: int = 0):
         """Tests the Deep SVDD model on the test data."""
 
@@ -108,6 +109,6 @@ class DeepSVDD(BaseNNModel):
                                            device=device,
                                            n_jobs_dataloader=n_jobs_dataloader)
 
-        self._test(self.trainer, dataset)
+        self._test(self.trainer, dataset,val)
         # Get results
         return self

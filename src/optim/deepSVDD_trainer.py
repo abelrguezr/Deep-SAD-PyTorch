@@ -2,7 +2,6 @@ from base.base_trainer import BaseTrainer
 from base.base_dataset import BaseADDataset
 from base.base_net import BaseNet
 from torch.utils.data.dataloader import DataLoader
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 
 import logging
 import time
@@ -46,9 +45,11 @@ class DeepSVDDTrainer(BaseTrainer):
 
         # Results
         self.train_time = None
-        self.auc_roc = None
-        self.auc_pr = None
-        self.test_time = None
+        self.test_labels=None
+        self.val_labels=None
+        self.val_scores=None
+        self.test_loss=None
+        self.val_loss=None
         self.test_scores = None
         self.reporter = reporter
 
@@ -59,8 +60,12 @@ class DeepSVDDTrainer(BaseTrainer):
         net = net.to(self.device)
 
         # Get train data loader
-        train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+        try:
+            train_loader, _, _ = dataset.loaders(batch_size=self.batch_size,
                                           num_workers=self.n_jobs_dataloader)
+        except:    
+            train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+                                          num_workers=self.n_jobs_dataloader)                      
 
         # Set optimizer (Adam optimizer for now)
         optimizer = optim.Adam(net.parameters(),
@@ -126,15 +131,6 @@ class DeepSVDDTrainer(BaseTrainer):
                 epoch + 1, self.n_epochs, epoch_train_time,
                 epoch_loss / n_batches))
 
-            if self.reporter:
-                self._log_train(net, dataset)
-                self.reporter(
-                    **{
-                        'train/loss/' + str(dataset.id): epoch_loss /
-                        n_batches,
-                        'timesteps_total': epoch + 1
-                    })
-
         self.train_time = time.time() - start_time
         logger.info('Training time: %.3f' % self.train_time)
 
@@ -148,7 +144,11 @@ class DeepSVDDTrainer(BaseTrainer):
         net = net.to(self.device)
 
         if self.train_loader is None:
-            self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
+            try:
+                self.train_loader, _, _ = dataset.loaders(batch_size=self.batch_size,
+                                            num_workers=self.n_jobs_dataloader)
+            except:    
+                self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
                                             num_workers=self.n_jobs_dataloader)
         # Set optimizer (Adam optimizer for now)
         self.optimizer = optim.Adam(net.parameters(),
@@ -228,19 +228,38 @@ class DeepSVDDTrainer(BaseTrainer):
 
         return net
 
-    def test(self, dataset: BaseADDataset, net: BaseNet):
+    def test(self, dataset: BaseADDataset, net: BaseNet, val=False):
+        if val:    
+            try:
+                _,val_loader, _ = dataset.loaders(batch_size=self.batch_size,
+                                            num_workers=self.n_jobs_dataloader)
+
+                self.val_labels, self.val_scores, self.val_loss = self._test(val_loader,net)                            
+            except:
+                raise  ValueError("The dataset does not support validation DataLoader")
+        else:
+            try:
+                _,_, test_loader = dataset.loaders(batch_size=self.batch_size,
+                                            num_workers=self.n_jobs_dataloader)    
+            except:    
+                _, test_loader = dataset.loaders(batch_size=self.batch_size,
+                                            num_workers=self.n_jobs_dataloader)    
+
+            self.test_labels, self.test_scores, self.test_loss = self._test(test_loader, net)   
+
+    def get_results(self,phase='val'):
+        if phase=='val':
+            return self.val_labels, self.val_scores, self.val_loss
+        else:
+            return self.test_labels, self.test_scores, self.test_loss    
+
+    def _test(self, loader, net: BaseNet):
         logger = logging.getLogger()
         epoch_loss = 0.0
         n_batches = 0
 
-
-
         # Set device for network
         net = net.to(self.device)
-
-        # Get test data loader
-        _, test_loader = dataset.loaders(batch_size=self.batch_size,
-                                         num_workers=self.n_jobs_dataloader)
 
         # Testing
         logger.info('Starting testing...')
@@ -248,7 +267,7 @@ class DeepSVDDTrainer(BaseTrainer):
         idx_label_score = []
         net.eval()
         with torch.no_grad():
-            for data in test_loader:
+            for data in loader:
                 inputs, labels, idx, _ = data
                 inputs = inputs.to(self.device)
                 outputs = net(inputs)
@@ -272,23 +291,12 @@ class DeepSVDDTrainer(BaseTrainer):
         self.test_time = time.time() - start_time
         logger.info('Testing time: %.3f' % self.test_time)
 
-        self.test_scores = idx_label_score
-
-        # Compute AUC
         _, labels, scores = zip(*idx_label_score)
         labels = np.array(labels)
         scores = np.array(scores)
+        test_loss = epoch_loss / n_batches
 
-        # AUC
-        self.auc_roc = roc_auc_score(labels, scores)
-        # PR-curve
-        self.pr_curve = precision_recall_curve(labels, scores)
-        precision, recall, thresholds = self.pr_curve
-        self.auc_pr = auc(recall, precision)
-        logger.info('Test set AUC: {:.2f}%'.format(100. * self.auc_roc))
-        self.test_loss = epoch_loss / n_batches
-
-        logger.info('Finished testing.')
+        return labels, scores, test_loss
 
     def init_center_c(self, train_loader: DataLoader, net: BaseNet, eps=0.1):
         """Initialize hypersphere center c as the mean from an initial forward pass on the data."""
@@ -312,18 +320,6 @@ class DeepSVDDTrainer(BaseTrainer):
         c[(abs(c) < eps) & (c > 0)] = eps
 
         return c
-
-    def _log_train(self, net, dataset):
-
-        id_data = str(dataset.id)
-        self.test(dataset, net)
-
-        self.reporter(
-            **{
-                'test/auc_roc/' + id_data: self.auc_roc,
-                'test/auc_pr/' + id_data: self.auc_pr,
-                'test/loss/' + id_data: self.test_loss
-            })
 
 def get_radius(dist: torch.Tensor, nu: float):
     """Optimally solve for radius R via the (1-nu)-quantile of distances."""
