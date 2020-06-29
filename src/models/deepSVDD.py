@@ -33,6 +33,7 @@ class DeepSVDD(BaseNNModel):
         assert (0 < nu) & (
             nu <= 1), "For hyperparameter nu, it must hold: 0 < nu <= 1."
         super().__init__(objective=objective, nu=nu, c=None, R=0.0)
+
     def train(self,
               dataset: BaseADDataset,
               optimizer_name: str = 'adam',
@@ -109,6 +110,6 @@ class DeepSVDD(BaseNNModel):
                                            device=device,
                                            n_jobs_dataloader=n_jobs_dataloader)
 
-        self._test(self.trainer, dataset,val)
+        self._test(self.trainer, dataset, val)
         # Get results
         return self

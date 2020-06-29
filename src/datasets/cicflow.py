@@ -7,7 +7,6 @@ import torch
 from hashlib import blake2b
 
 
-
 class CICFlowADDataset(BaseADDataset):
     def __init__(self,
                  root: str,
@@ -15,23 +14,21 @@ class CICFlowADDataset(BaseADDataset):
                  ratio_known_normal: float = 0.0,
                  ratio_known_outlier: float = 0.0,
                  ratio_pollution: float = 0.0,
-                 train_dates = ['2019-11-11'],
-                 test_dates = ['2019-11-14'],
-                 shuffle = False,
+                 train_dates=['2019-11-11'],
+                 val_dates=['2019-11-13'],
+                 test_dates=['2019-11-14'],
+                 shuffle=False,
                  random_state=None):
         super().__init__(root)
 
         self.train_dates = train_dates
         self.test_dates = test_dates
+        self.val_dates = val_dates
         # Define normal and outlier classes
         self.n_classes = 2  # 0: normal, 1: outlier
         self.normal_classes = (0, )
         self.outlier_classes = (1, )
         self.shuffle = shuffle
-
-        h = blake2b(digest_size=5)
-        h.update(str.encode(",".join(self.train_dates)))
-        self.id = h.hexdigest()
 
         if n_known_outlier_classes == 0:
             self.known_outlier_classes = ()
@@ -56,18 +53,15 @@ class CICFlowADDataset(BaseADDataset):
         # self.train_set = Subset(train_set, idx)
         self.train_set = train_set
 
+        self.val_set = CICFlowDataset(root=self.root,
+                                      train=False,
+                                      test_dates=self.val_dates,
+                                      random_state=random_state)
         # Get test set
         self.test_set = CICFlowDataset(root=self.root,
                                        train=False,
                                        test_dates=self.test_dates,
                                        random_state=random_state)
-
-    def get_period(self, start, end):
-        days_total = end_period - start_period
-        period = [
-            start_period + timedelta(days=x)
-            for x in range(days_total.days + 1)
-        ]
 
     def loaders(self,
                 batch_size: int,
@@ -77,9 +71,14 @@ class CICFlowADDataset(BaseADDataset):
                                   num_workers=num_workers,
                                   drop_last=True,
                                   shuffle=self.shuffle)
+        val_loader = DataLoader(dataset=self.val_set,
+                                batch_size=batch_size,
+                                num_workers=num_workers,
+                                drop_last=True,
+                                shuffle=self.shuffle)
         test_loader = DataLoader(dataset=self.test_set,
                                  batch_size=batch_size,
                                  num_workers=num_workers,
                                  drop_last=False,
                                  shuffle=self.shuffle)
-        return train_loader, test_loader
+        return train_loader, val_loader, test_loader

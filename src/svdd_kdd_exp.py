@@ -284,7 +284,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
                 "values": [True, False]
             },
         ],
-        objective_name="auc_pr",
+        objective_name="val_auc_pr",
     )
 
     search_alg = AxSearch(ax)
@@ -292,7 +292,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
 
     sched = ASHAScheduler(time_attr='training_iteration',
                           grace_period=10,
-                          metric="auc_pr")
+                          metric="val_auc_pr")
 
     analysis = tune.run(SVDDKDDExp,
                         name="SVDDKDDExp",
@@ -302,7 +302,7 @@ def main(data_path, load_model, ratio_known_normal, ratio_known_outlier, seed,
                             "training_iteration": 100,
                         },
                         resources_per_trial={"gpu": 1},
-                        num_samples=30,
+                        num_samples=20,
                         search_alg=re_search_alg,
                         scheduler=sched,
                         config=exp_config)
