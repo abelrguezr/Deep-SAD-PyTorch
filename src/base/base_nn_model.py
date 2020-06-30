@@ -77,6 +77,11 @@ class BaseNNModel(object):
         self.trainer.setup(dataset, self.net)
 
         return self    
+    
+    def set_network_manual(self, net):
+        self.net = net
+
+        return self    
 
     def _test(self, trainer, dataset, val=False):
         """Tests the Deep SAD model on the test data."""

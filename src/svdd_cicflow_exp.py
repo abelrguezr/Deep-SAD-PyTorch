@@ -15,6 +15,7 @@ from ray.tune.suggest.ax import AxSearch
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
+from networks.mlp import MLP
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
 from ray.tune.suggest import Repeater
@@ -51,6 +52,11 @@ class SVDDKDDExp(tune.Trainable):
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
         self.model.setup(self.dataset, cfg['net_name'])
+        
+        h_layers = [cfg['n_units']]*cfg['n_layers']
+        h_dims = [int(e/(2**idx)) for idx, e in enumerate(h_layers)]
+        net = MLP(x_dim=76, h_dims=h_dims, rep_dim=cfg['rep_dim'], bias=False)
+
 
         if cfg['pretrain']:
             self.model = self.model.pretrain(
@@ -137,7 +143,7 @@ class SVDDKDDExp(tune.Trainable):
     help='Name of the optimizer to use for Deep SAD network training.')
 @click.option('--validation',
               type=click.Choice(['kfold', 'time_series', 'index']),
-              default='index',
+              default='kfold',
               help='Validation strategy.')
 @click.option(
     '--lr',
@@ -303,14 +309,31 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
                 "bounds": [0.0, 0.2]
             },
             {
+                "name": "weight_decay",
+                "type": "range",
+                "bounds": [1e-6, 1],
+                "log_scale": True
+
+            },
+            {
                 "name": "objective",
                 "type": "choice",
                 "values": ['one-class', 'soft-boundary']
             },
             {
-                "name": "pretrain",
+                "name": "n_layers",
                 "type": "choice",
-                "values": [True, False]
+                "values": [2,3,4]
+            },
+            {
+                "name": "n_units",
+                "type": "choice",
+                "values": [256,128,64]
+            },
+            {
+                "name": "rep_dim",
+                "type": "range",
+                "bounds": [2, 128],
             },
         ],
         objective_name="val_auc_pr",
@@ -331,7 +354,7 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
                             "training_iteration": 100,
                         },
                         resources_per_trial={"gpu": 1},
-                        num_samples=20,
+                        num_samples=30,
                         local_dir=experiment_path,
                         search_alg=re_search_alg,
                         scheduler=sched,
