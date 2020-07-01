@@ -26,8 +26,7 @@ class SupervisedTrainer(BaseTrainer):
         super().__init__(optimizer_name, lr, n_epochs, lr_milestones,
                          batch_size, weight_decay, device, n_jobs_dataloader)
 
-        # Optimization parameters
-        self.eps = 1e-6
+        self.train_loader = None
 
         # Results
         self.train_time = None
@@ -36,16 +35,22 @@ class SupervisedTrainer(BaseTrainer):
         self.test_scores = None
         self.reporter = reporter
 
-
-    def setup(self, dataset, net):  
-                # Get train data loader
-        self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                          num_workers=self.n_jobs_dataloader)
+    def setup(self, dataset, net):
+        # Get train data loader
+        if self.train_loader is None:
+            try:
+                self.train_loader, _, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            except:
+                self.train_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
 
         # Set optimizer (Adam optimizer for now)
         self.optimizer = optim.Adam(net.parameters(),
-                               lr=self.lr,
-                               weight_decay=self.weight_decay)
+                                    lr=self.lr,
+                                    weight_decay=self.weight_decay)
 
         # Set learning rate scheduler
         self.scheduler = optim.lr_scheduler.MultiStepLR(
@@ -58,9 +63,15 @@ class SupervisedTrainer(BaseTrainer):
 
         logger = logging.getLogger()
 
-        # Get train data loader
-        train_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                          num_workers=self.n_jobs_dataloader)
+        if self.train_loader is None:
+            try:
+                self.train_loader, _, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            except:
+                self.train_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
 
         # Set device for network
         net = net.to(self.device)
@@ -76,20 +87,19 @@ class SupervisedTrainer(BaseTrainer):
 
         # Set loss function
         criterion = BCEWithLogitsLoss()
-  
 
         # Training
         logger.info('Starting training...')
         start_time = time.time()
         net.train()
-        
+
         for epoch in range(self.n_epochs):
             epoch_loss = 0.0
             n_batches = 0
             epoch_start_time = time.time()
-            
+
             for data in train_loader:
-                inputs, targets , _, _ = data
+                inputs, targets, _, _ = data
                 inputs, targets = inputs.to(self.device), targets.to(
                     self.device)
 
@@ -98,7 +108,7 @@ class SupervisedTrainer(BaseTrainer):
 
                 # Update network parameters via backpropagation: forward + backward + optimize
                 outputs = net(inputs)
-                targets=targets.type_as(outputs)
+                targets = targets.type_as(outputs)
                 loss = criterion(outputs, targets.unsqueeze(1))
                 loss.backward()
                 optimizer.step()
@@ -133,31 +143,28 @@ class SupervisedTrainer(BaseTrainer):
 
         logger = logging.getLogger()
 
-
         # Set device for network
         net = net.to(self.device)
 
- 
         # Training
         logger.info('Starting training...')
         start_time = time.time()
         net.train()
-        
+
         epoch_loss = 0.0
         n_batches = 0
         epoch_start_time = time.time()
-            
+
         for data in self.train_loader:
-            inputs, targets , _, _ = data
-            inputs, targets = inputs.to(self.device), targets.to(
-                self.device)
+            inputs, targets, _, _ = data
+            inputs, targets = inputs.to(self.device), targets.to(self.device)
 
             # Zero the network parameter gradients
             optimizer.zero_grad()
 
             # Update network parameters via backpropagation: forward + backward + optimize
             outputs = net(inputs)
-            targets=targets.type_as(outputs)
+            targets = targets.type_as(outputs)
             loss = self.criterion(outputs, targets.unsqueeze(1))
             loss.backward()
             self.optimizer.step()
@@ -173,25 +180,48 @@ class SupervisedTrainer(BaseTrainer):
             # log epoch statistics
         epoch_train_time = time.time() - epoch_start_time
         logger.info(
-                f'| Epoch: {epoch + 1:03}/{self.n_epochs:03} | Train Time: {epoch_train_time:.3f}s '
-                f'| Train Loss: {epoch_loss / n_batches:.6f} |')
+            f'| Epoch: {epoch + 1:03}/{self.n_epochs:03} | Train Time: {epoch_train_time:.3f}s '
+            f'| Train Loss: {epoch_loss / n_batches:.6f} |')
 
-            
         return {'train_loss': epoch_loss / n_batches}
 
+    def test(self, dataset: BaseADDataset, net: BaseNet, val=False):
+        if val:
+            try:
+                _, val_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
 
+                self.val_labels, self.val_scores, self.val_loss = self._test(
+                    val_loader, net)
+            except:
+                raise ValueError(
+                    "The dataset does not support validation DataLoader")
+        else:
+            try:
+                _, _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            except:
+                _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
 
-    def test(self, dataset: BaseADDataset, net: BaseNet):
+            self.test_labels, self.test_scores, self.test_loss = self._test(
+                test_loader, net)
+
+    def get_results(self, phase='val'):
+        if phase == 'val':
+            return self.val_labels, self.val_scores, self.val_loss
+        else:
+            return self.test_labels, self.test_scores, self.test_loss
+
+    def _test(self, loader, net: BaseNet):
         logger = logging.getLogger()
-
-        # Get test data loader
-        _, test_loader = dataset.loaders(batch_size=self.batch_size,
-                                         num_workers=self.n_jobs_dataloader)
 
         # Set device for network
         net = net.to(self.device)
         criterion = BCEWithLogitsLoss()
-
 
         # Testing
         logger.info('Starting testing...')
@@ -201,7 +231,7 @@ class SupervisedTrainer(BaseTrainer):
         idx_label_score = []
         net.eval()
         with torch.no_grad():
-            for data in test_loader:
+            for data in loader:
                 inputs, labels, semi_targets, idx = data
 
                 inputs = inputs.to(self.device)
@@ -210,7 +240,7 @@ class SupervisedTrainer(BaseTrainer):
                 idx = idx.to(self.device)
 
                 outputs = net(inputs)
-                labels=labels.type_as(outputs)
+                labels = labels.type_as(outputs)
                 loss = criterion(outputs, labels.unsqueeze(1))
 
                 scores = outputs.sigmoid()
@@ -231,29 +261,6 @@ class SupervisedTrainer(BaseTrainer):
         _, labels, scores = zip(*idx_label_score)
         labels = np.array(labels)
         scores = np.array(scores)
-        # AUC
-        self.auc_roc = roc_auc_score(labels, scores)
-        # PR-curve
-        self.pr_curve = precision_recall_curve(labels, scores)
-        precision, recall, thresholds = self.pr_curve
-        self.auc_pr = auc(recall, precision)
-        self.test_loss = epoch_loss / n_batches
+        test_loss = epoch_loss / n_batches
 
-        # Log results
-        logger.info('Test Loss: {:.6f}'.format(epoch_loss / n_batches))
-        logger.info('Test AUC-ROC: {:.2f}%'.format(100. * self.auc_roc))
-        logger.info('Test AUC-PR: {:.2f}%'.format(100. * self.auc_pr))
-        logger.info('Test Time: {:.3f}s'.format(self.test_time))
-        logger.info('Finished testing.')
-
-    def _log_train(self, net, dataset):
-
-        id_data = str(dataset.id)
-        self.test(dataset, net)
-
-        self.reporter(
-            **{
-                'test/auc_roc/' + id_data: self.auc_roc,
-                'test/auc_pr/' + id_data: self.auc_pr,
-                'test/loss/' + id_data: self.test_loss
-            })
+        return labels, scores, test_loss

@@ -8,9 +8,11 @@ import numpy as np
 import logging
 import ray
 import pickle
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+from sklearn.metrics import precision_recall_fscore_support
+
 from ray import tune
 from ray.tune import track
+from baselines.supervised import Supervised
 from ray.tune.suggest.ax import AxSearch
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
@@ -22,8 +24,7 @@ from ray.tune.suggest import Repeater
 from ray.tune.schedulers import ASHAScheduler
 
 
-
-class SVDDCICFlowExp(tune.Trainable):
+class SupervisedCICFlowExp(tune.Trainable):
     def _setup(self, cfg):
         # self.training_iteration = 0
         self.test_labels = None
@@ -42,7 +43,7 @@ class SVDDCICFlowExp(tune.Trainable):
                                         test_dates=test,
                                         shuffle=True)
 
-        self.model = DeepSVDD(cfg['objective'], cfg['nu'])
+        self.model = Supervised()
         self.model.set_trainer(optimizer_name=cfg['optimizer_name'],
                                lr=cfg['lr'],
                                n_epochs=cfg['n_epochs'],
@@ -52,25 +53,11 @@ class SVDDCICFlowExp(tune.Trainable):
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
         self.model.setup(self.dataset, cfg['net_name'])
-        
-        h_layers = [cfg['n_units']]*cfg['n_layers']
-        h_dims = [int(e/(2**idx)) for idx, e in enumerate(h_layers)]
-        net = MLP(x_dim=76, h_dims=h_dims, rep_dim=cfg['rep_dim'], bias=False)
 
+        h_layers = [cfg['n_units']] * cfg['n_layers']
+        h_dims = [int(e / (2**idx)) for idx, e in enumerate(h_layers)]
+        net = MLP(x_dim=76, h_dims=h_dims, rep_dim=1, bias=False)
         self.model.set_network_manual(net)
-
-
-        if cfg['pretrain']:
-            self.model = self.model.pretrain(
-                self.dataset,
-                optimizer_name=cfg['optimizer_name'],
-                lr=cfg['lr'],
-                n_epochs=cfg['ae_n_epochs'],
-                lr_milestones=cfg['ae_lr_milestone'],
-                batch_size=cfg['ae_batch_size'],
-                weight_decay=cfg['ae_weight_decay'],
-                device=cfg['device'],
-                n_jobs_dataloader=cfg["n_jobs_dataloader"])
 
     def _train(self):
         self.model.train_one_step(self.training_iteration)
@@ -85,21 +72,17 @@ class SVDDCICFlowExp(tune.Trainable):
 
         self.results = results
 
-        rocs = {
-            phase + '_auc_roc': roc_auc_score(labels, scores)
+        res = {
+            phase +'_' +metric: result
             for phase in ["val", "test"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for pr, rec, f1, sup in
+            [precision_recall_fscore_support(labels, scores)]
+            for metric, result in zip(*[('pr', 'rec', 'f1',
+                                         'sup'), (pr, rec, f1, sup)])
         }
 
-        prs = {
-            phase + '_auc_pr': auc(recall, precision)
-            for phase in ["val", "test"]
-            for labels, scores, _ in [self.model.trainer.get_results(phase)]
-            for precision, recall, _ in
-            [precision_recall_curve(labels, scores)]
-        }
-
-        return {**rocs, **prs}
+        return {**res}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
@@ -248,13 +231,12 @@ class SVDDCICFlowExp(tune.Trainable):
     'If 1, outlier class as specified in --known_outlier_class option.'
     'If > 1, the specified number of outlier classes will be sampled at random.'
 )
-def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_outlier, seed,
-         optimizer_name, validation, lr, n_epochs, lr_milestone, batch_size,
-         weight_decay, pretrain, ae_optimizer_name, ae_lr, ae_n_epochs,
-         ae_lr_milestone, ae_batch_size, ae_weight_decay, num_threads,
-         n_jobs_dataloader, normal_class, known_outlier_class,
+def main(data_path, experiment_path, load_model, ratio_known_normal,
+         ratio_known_outlier, seed, optimizer_name, validation, lr, n_epochs,
+         lr_milestone, batch_size, weight_decay, pretrain, ae_optimizer_name,
+         ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
+         num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-
     def _get_train_val_split(period, validation, n_splits=4):
         if (validation == 'kfold'):
             split = KFold(n_splits=n_splits)
@@ -265,23 +247,26 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
             split = type(
                 'obj', (object, ), {
                     'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))],
-                                [x for x in range(int(len(p) * 0.8), len(p))])]*n_splits
+                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
+                        x for x in range(int(len(p) * 0.8), len(p))
+                    ])] * n_splits
                 })
 
-        return [(train, val) for train, val in split.split(period)]   
+        return [(train, val) for train, val in split.split(period)]
 
     ray.init(address='auto')
 
     data_path = os.path.abspath(data_path)
     n_splits = 4
 
-    period = np.array(
-        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13', '2019-11-14', '2019-11-15'])
+    period = np.array([
+        '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
+        '2019-11-14', '2019-11-15'
+    ])
 
-    test_dates = period[-2:]    
-    train_dates = _get_train_val_split(period[:-2],validation, n_splits)
-    
+    test_dates = period[-2:]
+    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     exp_config = {
         **locals().copy(),
@@ -297,7 +282,7 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
 
     ax = AxClient(enforce_sequential_optimization=False)
     ax.create_experiment(
-        name="SVDDCICFlowExp",
+        name="SupervisedCICFlowExp",
         parameters=[
             {
                 "name": "lr",
@@ -306,39 +291,23 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
                 "log_scale": True
             },
             {
-                "name": "nu",
-                "type": "range",
-                "bounds": [0.0, 0.2]
-            },
-            {
                 "name": "weight_decay",
                 "type": "range",
                 "bounds": [1e-6, 1.0],
                 "log_scale": True
-
-            },
-            {
-                "name": "objective",
-                "type": "choice",
-                "values": ['one-class', 'soft-boundary']
             },
             {
                 "name": "n_layers",
                 "type": "choice",
-                "values": [2,3,4]
+                "values": [2, 3, 4]
             },
             {
                 "name": "n_units",
                 "type": "choice",
-                "values": [256,128,64]
-            },
-            {
-                "name": "rep_dim",
-                "type": "range",
-                "bounds": [2, 128],
+                "values": [256, 128, 64]
             },
         ],
-        objective_name="val_auc_pr",
+        objective_name="val_f1",
     )
 
     search_alg = AxSearch(ax)
@@ -346,10 +315,10 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
 
     sched = ASHAScheduler(time_attr='training_iteration',
                           grace_period=10,
-                          metric="val_auc_pr")
+                          metric="val_f1")
 
-    analysis = tune.run(SVDDCICFlowExp,
-                        name="SVDDCICFlowExp",
+    analysis = tune.run(SupervisedCICFlowExp,
+                        name="SupervisedCICFlowExp",
                         checkpoint_at_end=True,
                         checkpoint_freq=5,
                         stop={
@@ -362,7 +331,7 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
                         scheduler=sched,
                         config=exp_config)
 
-    print("Best config is:", analysis.get_best_config(metric="val_auc_pr"))
+    print("Best config is:", analysis.get_best_config(metric="val_f1"))
 
 
 if __name__ == '__main__':
