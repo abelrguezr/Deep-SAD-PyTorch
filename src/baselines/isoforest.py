@@ -41,8 +41,14 @@ class IsoForest(object):
         logger = logging.getLogger()
 
         # do not drop last batch for non-SGD optimization shallow_ssad
-        train_loader = DataLoader(dataset=dataset.train_set, batch_size=128, shuffle=True,
-                                  num_workers=n_jobs_dataloader, drop_last=False)
+        try:
+            train_loader, _, _ = dataset.loaders(
+                    batch_size=128,
+                    num_workers=0)
+        except:
+            train_loader, _ = dataset.loaders(
+                    batch_size=128,
+                    num_workers=0)
 
         # Get data from loader
         X = ()
@@ -65,18 +71,27 @@ class IsoForest(object):
         logger.info('Training Time: {:.3f}s'.format(self.results['train_time']))
         logger.info('Finished training.')
 
-    def test(self, dataset: BaseADDataset, device: str = 'cpu', n_jobs_dataloader: int = 0):
+    def test(self, dataset: BaseADDataset, device: str = 'cpu', n_jobs_dataloader: int = 0, val = False):
         """Tests the Isolation Forest model on the test data."""
         logger = logging.getLogger()
 
-        _, test_loader = dataset.loaders(batch_size=128, num_workers=n_jobs_dataloader)
+        try:
+            _, val_loader, test_loader = dataset.loaders(
+                    batch_size=128,
+                    num_workers=0)
+            loader = val_loader if val else test_loader
+        
+        except:
+            _, loader = dataset.loaders(
+                    batch_size=128,
+                    num_workers=0)
 
         # Get data from loader
         idx_label_score = []
         X = ()
         idxs = []
         labels = []
-        for data in test_loader:
+        for data in loader:
             inputs, label_batch, _, idx = data
             inputs, label_batch, idx = inputs.to(device), label_batch.to(device), idx.to(device)
             if self.hybrid:
@@ -104,10 +119,12 @@ class IsoForest(object):
         scores = np.array(scores)
         self.results['auc_roc'] = roc_auc_score(labels, scores)
 
-        # Log results
-        logger.info('Test AUC: {:.2f}%'.format(100. * self.results['test_auc']))
-        logger.info('Test Time: {:.3f}s'.format(self.results['test_time']))
-        logger.info('Finished testing.')
+        # # Log results
+        # logger.info('Test AUC: {:.2f}%'.format(100. * self.results['test_auc']))
+        # logger.info('Test Time: {:.3f}s'.format(self.results['test_time']))
+        # logger.info('Finished testing.')
+
+        return labels, scores
 
     def load_ae(self, dataset_name, model_path):
         """Load pretrained autoencoder from model_path for feature extraction in a hybrid Isolation Forest model."""

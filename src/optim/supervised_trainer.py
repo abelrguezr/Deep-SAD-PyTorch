@@ -54,7 +54,7 @@ class SupervisedTrainer(BaseTrainer):
 
         # Set learning rate scheduler
         self.scheduler = optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=self.lr_milestones, gamma=0.1)
+            self.optimizer, milestones=self.lr_milestones, gamma=0.1)
 
         # Set loss function
         self.criterion = BCEWithLogitsLoss()
@@ -139,7 +139,7 @@ class SupervisedTrainer(BaseTrainer):
 
         return net
 
-    def train_one_step(self, dataset: BaseADDataset, net: BaseNet, epoch: int):
+    def train_one_step(self, net: BaseNet, epoch: int):
 
         logger = logging.getLogger()
 
@@ -160,7 +160,7 @@ class SupervisedTrainer(BaseTrainer):
             inputs, targets = inputs.to(self.device), targets.to(self.device)
 
             # Zero the network parameter gradients
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
 
             # Update network parameters via backpropagation: forward + backward + optimize
             outputs = net(inputs)

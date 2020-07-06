@@ -7,29 +7,30 @@ import random
 import numpy as np
 import logging
 import ray
+from ray import tune
 import pickle
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
-from ray import tune
+from baselines.isoforest import IsoForest
 from ray.tune import track
 from ray.tune.suggest.ax import AxSearch
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
-from networks.mlp import MLP
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
 from ray.tune.suggest import Repeater
 from ray.tune.schedulers import ASHAScheduler
 
 
-
-class SVDDCICFlowExp(tune.Trainable):
+class IsoForestCICFlowExp(tune.Trainable):
     def _setup(self, cfg):
         # self.training_iteration = 0
         self.test_labels = None
         self.val_labels = None
         self.val_scores = None
         self.test_scores = None
+
+        self.cfg = cfg
 
         trial_idx = cfg['__trial_index__']
         train, val = cfg['train_dates'][trial_idx]
@@ -42,75 +43,69 @@ class SVDDCICFlowExp(tune.Trainable):
                                         test_dates=test,
                                         shuffle=True)
 
-        self.model = DeepSVDD(cfg['objective'], cfg['nu'])
-        self.model.set_trainer(optimizer_name=cfg['optimizer_name'],
-                               lr=cfg['lr'],
-                               n_epochs=cfg['n_epochs'],
-                               lr_milestones=cfg['lr_milestone'],
-                               batch_size=cfg['batch_size'],
-                               weight_decay=cfg['weight_decay'],
-                               device=cfg['device'],
-                               n_jobs_dataloader=cfg["n_jobs_dataloader"])
-        self.model.setup(self.dataset, cfg['net_name'])
-        
-        h_layers = [cfg['n_units']]*cfg['n_layers']
-        h_dims = [int(e/(2**idx)) for idx, e in enumerate(h_layers)]
-        net = MLP(x_dim=76, h_dims=h_dims, rep_dim=cfg['rep_dim'], bias=False)
+        def get_data_from_loader(loader):
+            X = ()
+            for data in loader:
+                inputs, _, _, _ = data
+                inputs = inputs.to(cfg['device'])
+                X_batch = inputs.view(inputs.size(0), -1)
+                X += (X_batch.cpu().data.numpy(), )
+            return np.concatenate(X)
 
-        self.model.set_network_manual(net)
-
-
-        if cfg['pretrain']:
-            self.model = self.model.pretrain(
-                self.dataset,
-                optimizer_name=cfg['optimizer_name'],
-                lr=cfg['lr'],
-                n_epochs=cfg['ae_n_epochs'],
-                lr_milestones=cfg['ae_lr_milestone'],
-                batch_size=cfg['ae_batch_size'],
-                weight_decay=cfg['ae_weight_decay'],
-                device=cfg['device'],
-                n_jobs_dataloader=cfg["n_jobs_dataloader"])
+        self.isoforest = IsoForest(hybrid=False,
+                                   n_estimators=int(cfg['n_estimators']),
+                                   max_samples=cfg['max_samples'],
+                                   contamination=cfg['contamination'],
+                                   n_jobs=4,
+                                   seed=cfg['seed'])
 
     def _train(self):
-        self.model.train_one_step(self.training_iteration)
-        self.model.test(self.dataset, val=True)
-        self.model.test(self.dataset, val=False)
+        # Train model on dataset
+        self.isoforest.train(self.dataset,
+                             device=self.cfg["device"],
+                             n_jobs_dataloader=self.cfg["n_jobs_dataloader"])
 
-        val_labels, val_scores, _ = self.model.trainer.get_results("val")
-        test_labels, test_scores, _ = self.model.trainer.get_results("test")
+        # Test model
+        val_labels, val_scores = self.isoforest.test(
+            self.dataset,
+            device=self.cfg["device"],
+            n_jobs_dataloader=self.cfg["n_jobs_dataloader"])
+        test_labels, test_scores = self.isoforest.test(
+            self.dataset,
+            device=self.cfg["device"],
+            n_jobs_dataloader=self.cfg["n_jobs_dataloader"])
 
-        results = locals().copy()
-        del results["self"]
-
-        self.results = results
+        self.results = {
+            "val": (val_labels, val_scores),
+            "test": (test_labels, test_scores)
+        }
 
         rocs = {
             phase + '_auc_roc': roc_auc_score(labels, scores)
             for phase in ["val", "test"]
-            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for labels, scores in [self.results[phase]]
         }
 
         prs = {
             phase + '_auc_pr': auc(recall, precision)
             for phase in ["val", "test"]
-            for labels, scores, _ in [self.model.trainer.get_results(phase)]
-            for precision, recall, _ in
+            for labels, scores in [self.results[phase]] for precision, recall, _ in
             [precision_recall_curve(labels, scores)]
         }
 
         return {**rocs, **prs}
 
     def _save(self, checkpoint_dir):
-        checkpoint_path = os.path.join(checkpoint_dir,
-                                       str(self.trial_id) + "_model.pth")
-        self.model.save_model(checkpoint_path)
+        pickle.dump(self.isoforest,
+                    open(os.path.join(checkpoint_dir, 'isoforest.pkl'), "wb"))
         pickle.dump(self.results,
                     open(os.path.join(checkpoint_dir, 'results.pkl'), "wb"))
-        return checkpoint_path
+        return checkpoint_dir
 
-    def _restore(self, checkpoint_path):
-        self.model.load_model(checkpoint_path)
+    def _restore(self, checkpoint_dir):
+        with open(os.path.join(checkpoint_dir, 'isoforest.pkl'),
+                  "wb") as pfile:
+            return pickle.load(pfile)
 
 
 ################################################################################
@@ -248,13 +243,12 @@ class SVDDCICFlowExp(tune.Trainable):
     'If 1, outlier class as specified in --known_outlier_class option.'
     'If > 1, the specified number of outlier classes will be sampled at random.'
 )
-def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_outlier, seed,
-         optimizer_name, validation, lr, n_epochs, lr_milestone, batch_size,
-         weight_decay, pretrain, ae_optimizer_name, ae_lr, ae_n_epochs,
-         ae_lr_milestone, ae_batch_size, ae_weight_decay, num_threads,
-         n_jobs_dataloader, normal_class, known_outlier_class,
+def main(data_path, experiment_path, load_model, ratio_known_normal,
+         ratio_known_outlier, seed, optimizer_name, validation, lr, n_epochs,
+         lr_milestone, batch_size, weight_decay, pretrain, ae_optimizer_name,
+         ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
+         num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-
     def _get_train_val_split(period, validation, n_splits=4):
         if (validation == 'kfold'):
             split = KFold(n_splits=n_splits)
@@ -265,25 +259,30 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
             split = type(
                 'obj', (object, ), {
                     'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))],
-                                [x for x in range(int(len(p) * 0.8), len(p))])]*n_splits
+                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
+                        x for x in range(int(len(p) * 0.8), len(p))
+                    ])] * n_splits
                 })
 
-        return [(train, val) for train, val in split.split(period)]   
+        return [(train, val) for train, val in split.split(period)]
 
     ray.init(address='auto')
 
     data_path = os.path.abspath(data_path)
     n_splits = 4
 
-    period = np.array(
-        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13', '2019-11-14', '2019-11-15'])
+    # period = np.array([
+    #     '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
+    #     '2019-11-14', '2019-11-15'
+    # ])
+    period = np.array([
+        '2019-11-08', '2019-11-09', '2019-11-11','2019-11-12'
+    ])
 
-    test_dates = period[-2:]    
-    train_dates = _get_train_val_split(period[:-2],validation, n_splits)
-    
+    test_dates = period[-1:]
+    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
     exp_config = {
         **locals().copy(),
         'net_name': 'cicflow_mlp',
@@ -298,45 +297,23 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
 
     ax = AxClient(enforce_sequential_optimization=False)
     ax.create_experiment(
-        name="SVDDCICFlowExp",
+        name="IsoForestCICFlowExp",
         parameters=[
             {
-                "name": "lr",
+                "name": "n_estimators",
                 "type": "range",
-                "bounds": [1e-6, 0.4],
-                "log_scale": True
+                "bounds": [100, 1000],
             },
             {
-                "name": "nu",
-                "type": "range",
-                "bounds": [0.0, 0.2]
-            },
-            {
-                "name": "weight_decay",
+                "name": "max_samples",
                 "type": "range",
                 "bounds": [1e-6, 1.0],
                 "log_scale": True
-
             },
             {
-                "name": "objective",
-                "type": "choice",
-                "values": ['one-class', 'soft-boundary']
-            },
-            {
-                "name": "n_layers",
-                "type": "choice",
-                "values": [2,3,4]
-            },
-            {
-                "name": "n_units",
-                "type": "choice",
-                "values": [256,128,64]
-            },
-            {
-                "name": "rep_dim",
+                "name": "contamination",
                 "type": "range",
-                "bounds": [2, 128],
+                "bounds": [0.0, 0.15]
             },
         ],
         objective_name="val_auc_pr",
@@ -349,15 +326,15 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
                           grace_period=10,
                           metric="val_auc_pr")
 
-    analysis = tune.run(SVDDCICFlowExp,
-                        name="SVDDCICFlowExp",
+    analysis = tune.run(IsoForestCICFlowExp,
+                        name="IsoForestCICFlowExp",
                         checkpoint_at_end=True,
                         checkpoint_freq=5,
                         stop={
-                            "training_iteration": 100,
+                            "training_iteration": 1,
                         },
-                        resources_per_trial={"gpu": 1},
-                        num_samples=30,
+                        resources_per_trial={"cpu": 4},
+                        num_samples=20,
                         local_dir=experiment_path,
                         search_alg=re_search_alg,
                         scheduler=sched,
