@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 from itertools import repeat
 from utils import enumerate_discrete, log_sum_exp
-from networks import log_standard_categorical
+from networks import *
 
 
 # Acknowledgements: https://github.com/wohlert/semi-supervised-pytorch

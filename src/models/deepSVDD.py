@@ -67,6 +67,18 @@ class DeepSVDD(BaseNNModel):
 
         return self
 
+    def train_one_step(self, epoch):
+        """Trains the model on the training data."""
+
+        # Get the model
+        self.train_loss = self.trainer.train_one_step(self.net, epoch)
+        self.results['train_time'] = self.trainer.train_time
+
+        self.R = float(self.trainer.R.cpu().data.numpy())  # get float
+        self.c = self.trainer.c.cpu().data.numpy().tolist()  # get as list
+
+        return self
+
     def set_trainer(self,
                     optimizer_name: str = 'adam',
                     lr: float = 0.001,
@@ -98,7 +110,7 @@ class DeepSVDD(BaseNNModel):
     def test(self,
              dataset: BaseADDataset,
              device: str = 'cuda',
-             val=False,
+             set_split="test",
              n_jobs_dataloader: int = 0):
         """Tests the Deep SVDD model on the test data."""
 
@@ -110,6 +122,6 @@ class DeepSVDD(BaseNNModel):
                                            device=device,
                                            n_jobs_dataloader=n_jobs_dataloader)
 
-        self._test(self.trainer, dataset, val)
+        self._test(self.trainer, dataset, set_split)
         # Get results
         return self

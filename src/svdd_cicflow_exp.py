@@ -22,7 +22,6 @@ from ray.tune.suggest import Repeater
 from ray.tune.schedulers import ASHAScheduler
 
 
-
 class SVDDCICFlowExp(tune.Trainable):
     def _setup(self, cfg):
         # self.training_iteration = 0
@@ -52,13 +51,12 @@ class SVDDCICFlowExp(tune.Trainable):
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
         self.model.setup(self.dataset, cfg['net_name'])
-        
-        h_layers = [cfg['n_units']]*cfg['n_layers']
-        h_dims = [int(e/(2**idx)) for idx, e in enumerate(h_layers)]
+
+        h_layers = [cfg['n_units']] * cfg['n_layers']
+        h_dims = [int(e / (2**idx)) for idx, e in enumerate(h_layers)]
         net = MLP(x_dim=76, h_dims=h_dims, rep_dim=cfg['rep_dim'], bias=False)
 
         self.model.set_network_manual(net)
-
 
         if cfg['pretrain']:
             self.model = self.model.pretrain(
@@ -74,11 +72,13 @@ class SVDDCICFlowExp(tune.Trainable):
 
     def _train(self):
         self.model.train_one_step(self.training_iteration)
-        self.model.test(self.dataset, val=True)
-        self.model.test(self.dataset, val=False)
+        self.model.test(self.dataset, set_split="train")
+        self.model.test(self.dataset, set_split="val")
+        self.model.test(self.dataset, set_split="test")
 
         val_labels, val_scores, _ = self.model.trainer.get_results("val")
         test_labels, test_scores, _ = self.model.trainer.get_results("test")
+        train_labels, train_scores, _ = self.model.trainer.get_results("train")
 
         results = locals().copy()
         del results["self"]
@@ -87,13 +87,13 @@ class SVDDCICFlowExp(tune.Trainable):
 
         rocs = {
             phase + '_auc_roc': roc_auc_score(labels, scores)
-            for phase in ["val", "test"]
+            for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
         }
 
         prs = {
             phase + '_auc_pr': auc(recall, precision)
-            for phase in ["val", "test"]
+            for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
             for precision, recall, _ in
             [precision_recall_curve(labels, scores)]
@@ -248,13 +248,12 @@ class SVDDCICFlowExp(tune.Trainable):
     'If 1, outlier class as specified in --known_outlier_class option.'
     'If > 1, the specified number of outlier classes will be sampled at random.'
 )
-def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_outlier, seed,
-         optimizer_name, validation, lr, n_epochs, lr_milestone, batch_size,
-         weight_decay, pretrain, ae_optimizer_name, ae_lr, ae_n_epochs,
-         ae_lr_milestone, ae_batch_size, ae_weight_decay, num_threads,
-         n_jobs_dataloader, normal_class, known_outlier_class,
+def main(data_path, experiment_path, load_model, ratio_known_normal,
+         ratio_known_outlier, seed, optimizer_name, validation, lr, n_epochs,
+         lr_milestone, batch_size, weight_decay, pretrain, ae_optimizer_name,
+         ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
+         num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-
     def _get_train_val_split(period, validation, n_splits=4):
         if (validation == 'kfold'):
             split = KFold(n_splits=n_splits)
@@ -265,28 +264,32 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
             split = type(
                 'obj', (object, ), {
                     'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))],
-                                [x for x in range(int(len(p) * 0.8), len(p))])]*n_splits
+                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
+                        x for x in range(int(len(p) * 0.8), len(p))
+                    ])] * n_splits
                 })
 
-        return [(train, val) for train, val in split.split(period)]   
+        return [(train, val) for train, val in split.split(period)]
 
     ray.init(address='auto')
 
     data_path = os.path.abspath(data_path)
     n_splits = 4
 
-    period = np.array(
-        ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13', '2019-11-14', '2019-11-15'])
+    period = np.array([
+        '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
+        '2019-11-14', '2019-11-15'
+    ])
 
-    test_dates = period[-2:]    
-    train_dates = _get_train_val_split(period[:-2],validation, n_splits)
-    
+    test_dates = period[-2:]
+    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
+
     exp_config = {
-        **locals().copy(),
-        'net_name': 'cicflow_mlp',
+        **locals().copy(), 'net_name': 'cicflow_mlp',
+        'n_units': 256,
+        'objective': 'soft-boundary'
     }
 
     if exp_config['seed'] != -1:
@@ -303,35 +306,24 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
             {
                 "name": "lr",
                 "type": "range",
-                "bounds": [1e-6, 0.4],
+                "bounds": [1e-6, 0.1],
                 "log_scale": True
             },
             {
                 "name": "nu",
                 "type": "range",
-                "bounds": [0.0, 0.2]
+                "bounds": [0.005, 0.15]
             },
             {
                 "name": "weight_decay",
                 "type": "range",
-                "bounds": [1e-6, 1.0],
+                "bounds": [1e-6, 0.01],
                 "log_scale": True
-
-            },
-            {
-                "name": "objective",
-                "type": "choice",
-                "values": ['one-class', 'soft-boundary']
             },
             {
                 "name": "n_layers",
                 "type": "choice",
-                "values": [2,3,4]
-            },
-            {
-                "name": "n_units",
-                "type": "choice",
-                "values": [256,128,64]
+                "values": [2, 3, 4]
             },
             {
                 "name": "rep_dim",
@@ -356,8 +348,8 @@ def main(data_path, experiment_path,load_model, ratio_known_normal, ratio_known_
                         stop={
                             "training_iteration": 100,
                         },
-                        resources_per_trial={"gpu": 1},
-                        num_samples=30,
+                        resources_per_trial={"gpu": 0},
+                        num_samples=10,
                         local_dir=experiment_path,
                         search_alg=re_search_alg,
                         scheduler=sched,

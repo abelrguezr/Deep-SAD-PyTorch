@@ -76,6 +76,11 @@ class BaseNNModel(object):
         self.set_network(net_name)
         self.trainer.setup(dataset, self.net)
 
+        return self
+    
+    def set_dataset(self,dataset):
+        self.trainer.setup(dataset, self.net)
+
         return self    
     
     def set_network_manual(self, net):
@@ -83,17 +88,13 @@ class BaseNNModel(object):
 
         return self    
 
-    def _test(self, trainer, dataset, val=False):
+    def _test(self, trainer, dataset, set_split="test"):
         """Tests the Deep SAD model on the test data."""
 
         self.trainer = trainer
-        self.trainer.test(dataset, self.net, val)
+        self.trainer.test(dataset, self.net, set_split)
 
-        # # Get results
-        # self.results['auc_roc'] = self.trainer.auc_roc
-        # self.results['auc_pr'] = self.trainer.auc_pr
-        # self.results['test_time'] = self.trainer.test_time
-        # self.results['test_scores'] = self.trainer.test_scores
+
 
         return self
 

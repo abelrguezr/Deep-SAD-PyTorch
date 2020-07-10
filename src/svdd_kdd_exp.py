@@ -63,11 +63,13 @@ class SVDDKDDExp(tune.Trainable):
 
     def _train(self):
         self.model.train_one_step(self.training_iteration)
-        self.model.test(self.dataset, val=True)
-        self.model.test(self.dataset, val=False)
+        self.model.test(self.dataset, set_split="train")
+        self.model.test(self.dataset, set_split="val")
+        self.model.test(self.dataset, set_split="test")
 
         val_labels, val_scores, _ = self.model.trainer.get_results("val")
         test_labels, test_scores, _ = self.model.trainer.get_results("test")
+        train_labels, train_scores, _ = self.model.trainer.get_results("train")
 
         results = locals().copy()
         del results["self"]
@@ -76,13 +78,13 @@ class SVDDKDDExp(tune.Trainable):
 
         rocs = {
             phase + '_auc_roc': roc_auc_score(labels, scores)
-            for phase in ["val", "test"]
+            for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
         }
 
         prs = {
             phase + '_auc_pr': auc(recall, precision)
-            for phase in ["val", "test"]
+            for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
             for precision, recall, _ in
             [precision_recall_curve(labels, scores)]

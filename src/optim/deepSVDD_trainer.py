@@ -45,11 +45,13 @@ class DeepSVDDTrainer(BaseTrainer):
 
         # Results
         self.train_time = None
-        self.test_labels=None
-        self.val_labels=None
-        self.val_scores=None
-        self.test_loss=None
-        self.val_loss=None
+        self.test_labels = None
+        self.val_labels = None
+        self.val_scores = None
+        self.train_labels = None
+        self.train_scores = None
+        self.test_loss = None
+        self.val_loss = None
         self.test_scores = None
         self.reporter = reporter
 
@@ -61,11 +63,11 @@ class DeepSVDDTrainer(BaseTrainer):
 
         # Get train data loader
         try:
-            train_loader, _, _ = dataset.loaders(batch_size=self.batch_size,
-                                          num_workers=self.n_jobs_dataloader)
-        except:    
-            train_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                          num_workers=self.n_jobs_dataloader)                      
+            train_loader, _, _ = dataset.loaders(
+                batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
+        except:
+            train_loader, _ = dataset.loaders(
+                batch_size=self.batch_size, num_workers=self.n_jobs_dataloader)
 
         # Set optimizer (Adam optimizer for now)
         optimizer = optim.Adam(net.parameters(),
@@ -138,23 +140,24 @@ class DeepSVDDTrainer(BaseTrainer):
 
         return net
 
-
-    def setup(self, dataset, net):  
+    def setup(self, dataset, net):
         logger = logging.getLogger()
         net = net.to(self.device)
 
         if self.train_loader is None:
             try:
-                self.train_loader, _, _ = dataset.loaders(batch_size=self.batch_size,
-                                            num_workers=self.n_jobs_dataloader)
-            except:    
-                self.train_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                            num_workers=self.n_jobs_dataloader)
+                self.train_loader, _, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            except:
+                self.train_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
         # Set optimizer (Adam optimizer for now)
         self.optimizer = optim.Adam(net.parameters(),
-                               lr=self.lr,
-                               weight_decay=self.weight_decay,
-                               amsgrad=self.optimizer_name == 'amsgrad')
+                                    lr=self.lr,
+                                    weight_decay=self.weight_decay,
+                                    amsgrad=self.optimizer_name == 'amsgrad')
 
         # Set learning rate scheduler
         self.scheduler = optim.lr_scheduler.MultiStepLR(
@@ -164,20 +167,20 @@ class DeepSVDDTrainer(BaseTrainer):
         if self.c is None:
             logger.info('Initializing center c...')
             self.c = self.init_center_c(self.train_loader, net)
-            logger.info('Center c initialized.')  
+            logger.info('Center c initialized.')
 
     def train_one_step(self, net: BaseNet, epoch: int):
         logger = logging.getLogger()
 
         # Set device for network
-        # net = net.to(self.device)     
+        # net = net.to(self.device)
 
         # Training
         logger.info('Starting training...')
         start_time = time.time()
         net.train()
-        
-        if(True):
+
+        if (True):
             self.scheduler.step()
             if epoch in self.lr_milestones:
                 logger.info('  LR scheduler: new learning rate is %g' %
@@ -220,7 +223,6 @@ class DeepSVDDTrainer(BaseTrainer):
                 epoch + 1, self.n_epochs, epoch_train_time,
                 epoch_loss / n_batches))
 
-
         self.train_time = time.time() - start_time
         logger.info('Training time: %.3f' % self.train_time)
 
@@ -228,30 +230,51 @@ class DeepSVDDTrainer(BaseTrainer):
 
         return net
 
-    def test(self, dataset: BaseADDataset, net: BaseNet, val=False):
-        if val:    
+    def test(self, dataset: BaseADDataset, net: BaseNet, set_split="train"):
+        if set_split == "train":
             try:
-                _,val_loader, _ = dataset.loaders(batch_size=self.batch_size,
-                                            num_workers=self.n_jobs_dataloader)
+                train_loader, _, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
 
-                self.val_labels, self.val_scores, self.val_loss = self._test(val_loader,net)                            
             except:
-                raise  ValueError("The dataset does not support validation DataLoader")
+                train_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            self.train_labels, self.train_scores, self.train_loss = self._test(
+                train_loader, net)
+
+        elif set_split == "val":
+            try:
+                _, val_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+
+                self.val_labels, self.val_scores, self.val_loss = self._test(
+                    val_loader, net)
+            except:
+                raise ValueError(
+                    "The dataset does not support validation DataLoader")
         else:
             try:
-                _,_, test_loader = dataset.loaders(batch_size=self.batch_size,
-                                            num_workers=self.n_jobs_dataloader)    
-            except:    
-                _, test_loader = dataset.loaders(batch_size=self.batch_size,
-                                            num_workers=self.n_jobs_dataloader)    
+                _, _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            except:
+                _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
 
-            self.test_labels, self.test_scores, self.test_loss = self._test(test_loader, net)   
+            self.test_labels, self.test_scores, self.test_loss = self._test(
+                test_loader, net)
 
-    def get_results(self,phase='val'):
-        if phase=='val':
+    def get_results(self, phase='val'):
+        if phase == 'val':
             return self.val_labels, self.val_scores, self.val_loss
+        elif phase == 'train':
+            return self.train_labels, self.train_scores, self.train_loss
         else:
-            return self.test_labels, self.test_scores, self.test_loss    
+            return self.test_labels, self.test_scores, self.test_loss
 
     def _test(self, loader, net: BaseNet):
         logger = logging.getLogger()
@@ -279,7 +302,7 @@ class DeepSVDDTrainer(BaseTrainer):
                 else:
                     loss = torch.mean(dist)
                     scores = dist
-                
+
                 epoch_loss += loss.item()
                 n_batches += 1
                 # Save triples of (idx, label, score) in a list
@@ -321,8 +344,7 @@ class DeepSVDDTrainer(BaseTrainer):
 
         return c
 
+
 def get_radius(dist: torch.Tensor, nu: float):
     """Optimally solve for radius R via the (1-nu)-quantile of distances."""
     return np.quantile(np.sqrt(dist.clone().data.cpu().numpy()), 1 - nu)
-
-
