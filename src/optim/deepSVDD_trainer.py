@@ -168,6 +168,10 @@ class DeepSVDDTrainer(BaseTrainer):
             logger.info('Initializing center c...')
             self.c = self.init_center_c(self.train_loader, net)
             logger.info('Center c initialized.')
+                
+                
+        return net
+    
 
     def train_one_step(self, net: BaseNet, epoch: int):
         logger = logging.getLogger()

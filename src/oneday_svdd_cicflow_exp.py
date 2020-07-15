@@ -22,7 +22,7 @@ from ray.tune.suggest import Repeater
 from ray.tune.schedulers import ASHAScheduler
 
 
-class SVDDCICFlowExp(tune.Trainable):
+class OneDaySVDDCICFlowExp(tune.Trainable):
     def _setup(self, cfg):
         # self.training_iteration = 0
         self.test_labels = None
@@ -30,16 +30,13 @@ class SVDDCICFlowExp(tune.Trainable):
         self.val_scores = None
         self.test_scores = None
 
-        trial_idx = cfg['__trial_index__']
-        train, val = cfg['train_dates'][trial_idx]
-        test = cfg['test_dates']
+        dates = cfg['dates']
 
         self.dataset = CICFlowADDataset(root=os.path.abspath(cfg['data_path']),
                                         n_known_outlier_classes=1,
-                                        train_dates=cfg['period'][train],
-                                        val_dates=cfg['period'][val],
-                                        test_dates=test,
-                                        shuffle=True)
+                                        test_dates=dates,
+                                        shuffle=True,
+                                        split=True)
 
         self.model = DeepSVDD(cfg['objective'], cfg['nu'])
         self.model.set_trainer(optimizer_name=cfg['optimizer_name'],
@@ -248,23 +245,6 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
          ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
          num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-    def _get_train_val_split(period, validation, n_splits=4):
-        if (validation == 'kfold'):
-            split = KFold(n_splits=n_splits)
-        elif (validation == 'time_series'):
-            split = TimeSeriesSplit(n_splits=n_splits)
-        else:
-            # Dummy object with split method that return indexes of train/test split 0.8/0.2. Similar to train_test_split without shuffle
-            split = type(
-                'obj', (object, ), {
-                    'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
-                        x for x in range(int(len(p) * 0.8), len(p))
-                    ])] * n_splits
-                })
-
-        return [(train, val) for train, val in split.split(period)]
-
     ray.init(address='auto')
 
     data_path = os.path.abspath(data_path)
@@ -275,15 +255,15 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
         '2019-11-14', '2019-11-15'
     ])
 
-    test_dates = period[-2:]
-    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+    dates = period[:2]
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     exp_config = {
-        **locals().copy(), 'net_name': 'cicflow_mlp',
-        'n_units': 256,
+        **locals().copy(),
+        'net_name': 'cicflow_mlp',
         'objective': 'soft-boundary'
+
     }
 
     if exp_config['seed'] != -1:
@@ -319,24 +299,18 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
     )
 
     search_alg = AxSearch(ax)
-    re_search_alg = Repeater(search_alg, repeat=n_splits)
 
-    sched = ASHAScheduler(time_attr='training_iteration',
-                          grace_period=10,
-                          metric="val_auc_pr")
-
-    analysis = tune.run(SVDDCICFlowExp,
-                        name="SVDDCICFlowExp",
+    analysis = tune.run(OneDaySVDDCICFlowExp,
+                        name="OneDaySVDDCICFlowExp",
                         checkpoint_at_end=True,
                         checkpoint_freq=5,
                         stop={
-                            "training_iteration": 100,
+                            "training_iteration": 1,
                         },
                         resources_per_trial={"gpu": 0},
-                        num_samples=10,
+                        num_samples=1,
                         local_dir=experiment_path,
-                        search_alg=re_search_alg,
-                        scheduler=sched,
+                        search_alg=search_alg,
                         config=exp_config)
 
     print("Best config is:", analysis.get_best_config(metric="val_auc_pr"))

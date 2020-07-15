@@ -94,8 +94,6 @@ class BaseNNModel(object):
         self.trainer = trainer
         self.trainer.test(dataset, self.net, set_split)
 
-
-
         return self
 
     def pretrain(self,

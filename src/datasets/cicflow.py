@@ -14,11 +14,12 @@ class CICFlowADDataset(BaseADDataset):
                  ratio_known_normal: float = 0.0,
                  ratio_known_outlier: float = 0.0,
                  ratio_pollution: float = 0.0,
-                 train_dates=['2019-11-11'],
-                 val_dates=['2019-11-13'],
+                 train_dates=['2019-11-14'],
+                 val_dates=['2019-11-14'],
                  test_dates=['2019-11-14'],
                  shuffle=False,
-                 random_state=None):
+                 random_state=None,
+                 split=False):
         super().__init__(root)
 
         self.train_dates = train_dates
@@ -39,7 +40,8 @@ class CICFlowADDataset(BaseADDataset):
         train_set = CICFlowDataset(root=self.root,
                                    train_dates=self.train_dates,
                                    train=True,
-                                   random_state=random_state)
+                                   random_state=random_state,
+                                   split=split)
 
         # Create semi-supervised setting
         idx, _, semi_targets = create_semisupervised_setting(
@@ -55,11 +57,14 @@ class CICFlowADDataset(BaseADDataset):
 
         self.val_set = CICFlowDataset(root=self.root,
                                       train=False,
+                                      train_dates=self.train_dates,
                                       test_dates=self.val_dates,
-                                      random_state=random_state)
+                                      random_state=random_state,
+                                      split=split)
         # Get test set
         self.test_set = CICFlowDataset(root=self.root,
                                        train=False,
+                                       train_dates=self.train_dates,
                                        test_dates=self.test_dates,
                                        random_state=random_state)
 

@@ -19,11 +19,11 @@ class CICFlowDataset(Dataset):
     """
     def __init__(self,
                  root: str,
-                 train_dates = None,
-                 test_dates = None,
+                 train_dates=None,
+                 test_dates=None,
                  train=True,
                  random_state=None,
-                 download=False):
+                 split=False):
         super(Dataset, self).__init__()
 
         self.classes = [0, 1]
@@ -36,12 +36,13 @@ class CICFlowDataset(Dataset):
         self.train_dates = train_dates  # training set or test set
         self.test_dates = test_dates  # training set or test set
 
-        if self.train: X, y = self._get_csv_data(train_dates)
-        else: X, y = self._get_csv_data(test_dates)
+        X_train, y_train = self._get_csv_data(train_dates)
 
-        # if download:
-        #     self.download()
-        
+        if self.train:
+            X, y = X_train, y_train
+        else:
+            X, y = self._get_csv_data(test_dates)
+
         idx_norm = np.invert(y)
         idx_out = y
 
@@ -50,14 +51,24 @@ class CICFlowDataset(Dataset):
         X_out, y_out = X[idx_out], y[idx_out]
 
         # Standardize data (per feature Z-normalization, i.e. zero-mean and unit variance)
-        scaler = StandardScaler().fit(X)
-        X_stand = scaler.transform(X)
+        scaler = StandardScaler().fit(X_train)
+        X = scaler.transform(X)
+        X_train = scaler.transform(X_train)
 
         # Scale to range [0,1]
-        minmax_scaler = MinMaxScaler().fit(X_stand)
-        X_scaled = minmax_scaler.transform(X_stand)
+        minmax_scaler = MinMaxScaler().fit(X_train)
+        X = minmax_scaler.transform(X)
 
-        self.data = torch.tensor(X_scaled, dtype=torch.float32)
+        if split:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_train, y_train, test_size=0.3, random_state=42)
+
+            if self.train:
+                X, y = X_train, y_train
+            else:
+                X, y = X_test, y_test
+
+        self.data = torch.tensor(X, dtype=torch.float32)
         self.targets = torch.tensor(y, dtype=torch.int64)
 
         self.semi_targets = torch.zeros_like(self.targets)
@@ -66,9 +77,14 @@ class CICFlowDataset(Dataset):
 
         date_str = [str(date).split()[0] for date in dates]
 
-
-        X_dates_paths = [self.root+'/'+ date.replace('-', '')+'/merged_flows_flow.npy' for date in date_str]
-        y_dates_paths = [self.root+'/'+ date.replace('-', '')+'/merged_flows_label.npy' for date in date_str]
+        X_dates_paths = [
+            self.root + '/' + date.replace('-', '') + '/merged_flows_flow.npy'
+            for date in date_str
+        ]
+        y_dates_paths = [
+            self.root + '/' + date.replace('-', '') + '/merged_flows_label.npy'
+            for date in date_str
+        ]
 
         X = np.ma.row_stack(tuple(np.load(path) for path in X_dates_paths))
         y = np.concatenate(tuple(np.load(path) for path in y_dates_paths))
@@ -76,7 +92,6 @@ class CICFlowDataset(Dataset):
         # drop NaNs
         # X = X[~np.isnan(X)]
         # y = y[~np.isnan(X)]
-
 
         return X, y
 
