@@ -1,5 +1,6 @@
 import torch
-
+import numpy as np
+from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from torch.autograd import Variable
 
 
@@ -44,3 +45,25 @@ def log_sum_exp(tensor, dim=-1, sum_op=torch.sum):
 def binary_cross_entropy(x, y):
     eps = 1e-8
     return -torch.sum(y * torch.log(x + eps) + (1 - y) * torch.log(1 - x + eps), dim=-1)
+
+def get_ratio_anomalies(labels):
+    _, counts = np.unique(labels, return_counts=True)
+    [background, anomalies] = counts
+    return anomalies/(anomalies+background)    
+
+def get_train_val_split(period, validation, n_splits=4):
+        if (validation == 'kfold'):
+            split = KFold(n_splits=n_splits)
+        elif (validation == 'time_series'):
+            split = TimeSeriesSplit(n_splits=n_splits)
+        else:
+            # Dummy object with split method that return indexes of train/test split 0.8/0.2. Similar to train_test_split without shuffle
+            split = type(
+                'obj', (object, ), {
+                    'split':
+                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
+                        x for x in range(int(len(p) * 0.8), len(p))
+                    ])] * n_splits
+                })
+
+        return [(train, val) for train, val in split.split(period)]

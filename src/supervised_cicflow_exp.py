@@ -9,15 +9,14 @@ import logging
 import ray
 import pickle
 from sklearn.metrics import precision_recall_fscore_support
-
 from ray import tune
 from ray.tune import track
 from baselines.supervised import Supervised
 from ray.tune.suggest.ax import AxSearch
 from ax.service.ax_client import AxClient
-from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
 from networks.mlp import MLP
+from utils.misc import get_train_val_split
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
 from ray.tune.suggest import Repeater
@@ -53,11 +52,6 @@ class SupervisedCICFlowExp(tune.Trainable):
                                device=cfg['device'],
                                n_jobs_dataloader=cfg["n_jobs_dataloader"])
         self.model.setup(self.dataset, cfg['net_name'])
-
-        h_layers = [cfg['n_units']] * cfg['n_layers']
-        h_dims = [int(e / (2**idx)) for idx, e in enumerate(h_layers)]
-        net = MLP(x_dim=76, h_dims=h_dims, rep_dim=1, bias=False)
-        self.model.set_network_manual(net)
 
     def _train(self):
         self.model.train_one_step(self.training_iteration)
@@ -237,22 +231,7 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
          ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
          num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-    def _get_train_val_split(period, validation, n_splits=4):
-        if (validation == 'kfold'):
-            split = KFold(n_splits=n_splits)
-        elif (validation == 'time_series'):
-            split = TimeSeriesSplit(n_splits=n_splits)
-        else:
-            # Dummy object with split method that return indexes of train/test split 0.8/0.2. Similar to train_test_split without shuffle
-            split = type(
-                'obj', (object, ), {
-                    'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
-                        x for x in range(int(len(p) * 0.8), len(p))
-                    ])] * n_splits
-                })
-
-        return [(train, val) for train, val in split.split(period)]
+    
 
     ray.init(address='auto')
 
@@ -265,7 +244,7 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
     ])
 
     test_dates = period[-2:]
-    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+    train_dates = get_train_val_split(period[:-2], validation, n_splits)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     exp_config = {
@@ -296,16 +275,6 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
                 "bounds": [1e-6, 1.0],
                 "log_scale": True
             },
-            {
-                "name": "n_layers",
-                "type": "choice",
-                "values": [2, 3, 4]
-            },
-            {
-                "name": "n_units",
-                "type": "choice",
-                "values": [256, 128, 64]
-            },
         ],
         objective_name="val_f1",
     )
@@ -332,6 +301,7 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
                         config=exp_config)
 
     print("Best config is:", analysis.get_best_config(metric="val_f1"))
+
 
 
 if __name__ == '__main__':

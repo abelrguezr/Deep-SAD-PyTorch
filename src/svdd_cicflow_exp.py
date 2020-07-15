@@ -8,6 +8,7 @@ import numpy as np
 import logging
 import ray
 import pickle
+from utils.misc import get_train_val_split, get_ratio_anomalies
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from ray import tune
 from ray.tune import track
@@ -84,8 +85,14 @@ class SVDDCICFlowExp(tune.Trainable):
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
         }
+        
+        ratios = {
+            phase + '_ratio_anomalies': get_ratio_anomalies(labels)
+            for phase in ["val", "test", "train"]
+            for labels, _, _ in [self.model.trainer.get_results(phase)]
+        }
 
-        prs = {
+        prc = {
             phase + '_auc_pr': auc(recall, precision)
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
@@ -93,7 +100,36 @@ class SVDDCICFlowExp(tune.Trainable):
             [precision_recall_curve(labels, scores)]
         }
 
-        return {**rocs, **prs}
+        get_f1 = lambda pr, rec: 2 * (pr * rec) / (pr + rec)
+        max_f1 = lambda pr, rec: max(get_f1(pr, rec))
+        idx_max_f1 = lambda pr, rec: np.argmax(
+            get_f1(pr, rec)[~np.isnan(get_f1(pr, rec))])
+
+        f1s = {
+            phase + '_max_f1': max_f1(precision, recall)
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+        prs = {
+            phase + '_precision_max_f1':
+            precision[idx_max_f1(precision, recall)]
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        recs = {
+            phase + '_recall_max_f1': recall[idx_max_f1(precision, recall)]
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        return {**rocs, **ratios, **prc, **prs, **recs, **f1s}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
@@ -248,22 +284,6 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
          ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
          num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-    def _get_train_val_split(period, validation, n_splits=4):
-        if (validation == 'kfold'):
-            split = KFold(n_splits=n_splits)
-        elif (validation == 'time_series'):
-            split = TimeSeriesSplit(n_splits=n_splits)
-        else:
-            # Dummy object with split method that return indexes of train/test split 0.8/0.2. Similar to train_test_split without shuffle
-            split = type(
-                'obj', (object, ), {
-                    'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
-                        x for x in range(int(len(p) * 0.8), len(p))
-                    ])] * n_splits
-                })
-
-        return [(train, val) for train, val in split.split(period)]
 
     ray.init(address='auto')
 
@@ -276,7 +296,7 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
     ])
 
     test_dates = period[-2:]
-    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+    train_dates = get_train_val_split(period[:-2], validation, n_splits)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

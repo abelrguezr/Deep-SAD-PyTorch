@@ -1,13 +1,12 @@
 import click
 import os
-import pandas as pd
 import torch
 import logging
 import random
 import numpy as np
-import logging
 import ray
 import pickle
+from utils.misc import get_ratio_anomalies
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 from ray import tune
 from ray.tune import track
@@ -15,7 +14,6 @@ from ray.tune.suggest.ax import AxSearch
 from ax.service.ax_client import AxClient
 from sklearn.model_selection import TimeSeriesSplit, KFold, train_test_split
 from datasets.cicflow import CICFlowADDataset
-from networks.mlp import MLP
 from models.deepSVDD import DeepSVDD
 from datasets.main import load_dataset
 from ray.tune.suggest import Repeater
@@ -81,8 +79,14 @@ class OneDaySVDDCICFlowExp(tune.Trainable):
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
         }
+        
+        ratios = {
+            phase + '_ratio_anomalies': get_ratio_anomalies(labels)
+            for phase in ["val", "test", "train"]
+            for labels, _, _ in [self.model.trainer.get_results(phase)]
+        }
 
-        prs = {
+        prc = {
             phase + '_auc_pr': auc(recall, precision)
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
@@ -90,7 +94,37 @@ class OneDaySVDDCICFlowExp(tune.Trainable):
             [precision_recall_curve(labels, scores)]
         }
 
-        return {**rocs, **prs}
+        get_f1 = lambda pr, rec: 2 * (pr * rec) / (pr + rec)
+        max_f1 = lambda pr, rec: max(get_f1(pr, rec))
+        idx_max_f1 = lambda pr, rec: np.argmax(
+            get_f1(pr, rec)[~np.isnan(get_f1(pr, rec))])
+
+        f1s = {
+            phase + '_max_f1': max_f1(precision, recall)
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+        prs = {
+            phase + '_precision_max_f1':
+            precision[idx_max_f1(precision, recall)]
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        recs = {
+            phase + '_recall_max_f1': recall[idx_max_f1(precision, recall)]
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        return {**rocs, **ratios, **prc, **prs, **recs, **f1s}
+
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,
@@ -305,10 +339,10 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
                         checkpoint_at_end=True,
                         checkpoint_freq=5,
                         stop={
-                            "training_iteration": 1,
+                            "training_iteration": 50,
                         },
-                        resources_per_trial={"gpu": 0},
-                        num_samples=1,
+                        resources_per_trial={"gpu": 1},
+                        num_samples=10,
                         local_dir=experiment_path,
                         search_alg=search_alg,
                         config=exp_config)
