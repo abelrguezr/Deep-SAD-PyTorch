@@ -15,7 +15,7 @@ def build_network(net_name, ae_net=None):
                             'cifar10_LeNet', 'cifar10_DGM_M2',
                             'cifar10_DGM_M1M2', 'arrhythmia_mlp', 'cardio_mlp',
                             'satellite_mlp', 'satimage-2_mlp', 'shuttle_mlp',
-                            'cicflow_mlp', 'cicflow_tcn', 'thyroid_mlp',
+                            'cicflow_mlp', 'cicflow_mlp_2', 'cicflow_mlp_3', 'cicflow_tcn', 'thyroid_mlp',
                             'arrhythmia_DGM_M2', 'cardio_DGM_M2',
                             'satellite_DGM_M2', 'satimage-2_DGM_M2',
                             'cicflow_mlp_supervised', 'shuttle_DGM_M2',
@@ -63,6 +63,10 @@ def build_network(net_name, ae_net=None):
 
     if net_name == 'cicflow_mlp':
         net = MLP(x_dim=76, h_dims=[64, 32], rep_dim=16, bias=False)
+    if net_name == 'cicflow_mlp_2':
+        net = MLP(x_dim=76, h_dims=[128, 64], rep_dim=32, bias=False)
+    if net_name == 'cicflow_mlp_3':
+        net = MLP(x_dim=76, h_dims=[128, 64], rep_dim=64, bias=False)
 
     if net_name == 'nsl_kdd_mlp':
         net = MLP(x_dim=38, h_dims=[32, 16], rep_dim=8, bias=False)

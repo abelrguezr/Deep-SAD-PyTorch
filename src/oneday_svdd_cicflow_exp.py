@@ -295,7 +295,6 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
 
     exp_config = {
         **locals().copy(),
-        'net_name': 'cicflow_mlp',
         'objective': 'soft-boundary'
 
     }
@@ -321,6 +320,11 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
                 "name": "nu",
                 "type": "range",
                 "bounds": [0.005, 0.5]
+            },
+            {
+                "name": "net_name",
+                "type": "choice",
+                "values": ['cicflow_mlp','cicflow_mlp_2','cicflow_mlp_3']
             },
             {
                 "name": "weight_decay",
