@@ -272,7 +272,20 @@ class DeepSVDDTrainer(BaseTrainer):
             self.test_labels, self.test_scores, self.test_loss = self._test(
                 test_loader, net)
 
-    def get_results(self, phase='val'):
+    def get_output(self, dataset: BaseADDataset, net: BaseNet, set_split="train"):
+        try:
+            _, _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+        except:
+            _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+
+        return self._get_output(
+                test_loader, net)
+
+    def _get_results(self, phase='val'):
         if phase == 'val':
             return self.val_labels, self.val_scores, self.val_loss
         elif phase == 'train':
@@ -324,6 +337,40 @@ class DeepSVDDTrainer(BaseTrainer):
         test_loss = epoch_loss / n_batches
 
         return labels, scores, test_loss
+    
+    def _get_output(self, loader, net: BaseNet):
+        logger = logging.getLogger()
+        epoch_loss = 0.0
+        n_batches = 0
+
+        # Set device for network
+        net = net.to(self.device)
+
+        # Testing
+        logger.info('Starting testing...')
+        start_time = time.time()
+        idx_label_output = []
+        net.eval()
+        with torch.no_grad():
+            for data in loader:
+                inputs, labels, idx, _ = data
+                inputs = inputs.to(self.device)
+                outputs = net(inputs)
+
+                # Save triples of (idx, label, score) in a list
+                idx_label_output += list(
+                    zip(idx.cpu().data.numpy().tolist(),
+                        labels.cpu().data.numpy().tolist(),
+                        outputs.cpu().data.numpy().tolist()))
+
+        self.test_time = time.time() - start_time
+        logger.info('Testing time: %.3f' % self.test_time)
+
+        _, labels, outputs = zip(*idx_label_output)
+        labels = np.array(labels)
+        outputs = np.array(outputs)
+
+        return labels, outputs
 
     def init_center_c(self, train_loader: DataLoader, net: BaseNet, eps=0.1):
         """Initialize hypersphere center c as the mean from an initial forward pass on the data."""
