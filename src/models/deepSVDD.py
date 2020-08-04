@@ -125,3 +125,20 @@ class DeepSVDD(BaseNNModel):
         self._test(self.trainer, dataset, set_split)
         # Get results
         return self
+    
+    def get_output(self,
+             dataset: BaseADDataset,
+             device: str = 'cuda',
+             set_split="test",
+             n_jobs_dataloader: int = 0):
+        """Gets the Deep SVDD output on the test data."""
+
+        if self.trainer is None:
+            self.trainer = DeepSVDDTrainer(self.objective,
+                                           self.R,
+                                           self.c,
+                                           self.nu,
+                                           device=device,
+                                           n_jobs_dataloader=n_jobs_dataloader)
+
+        return self._get_output(self.trainer, dataset, set_split)

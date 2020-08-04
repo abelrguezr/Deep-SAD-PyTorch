@@ -96,6 +96,14 @@ class BaseNNModel(object):
 
         return self
 
+    def _get_output(self, trainer, dataset, set_split="test"):
+        """Tests the Deep SAD model on the test data."""
+
+        self.trainer = trainer
+        return self.trainer.get_output(dataset, self.net, set_split)
+
+        
+
     def pretrain(self,
                  dataset: BaseADDataset,
                  optimizer_name: str = 'adam',
