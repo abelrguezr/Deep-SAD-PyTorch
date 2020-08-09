@@ -59,11 +59,11 @@ class NSLKDDDataset(Dataset):
         header_df = pd.read_csv(self.root + '/Field Names.csv', header=None)
         headers = header_df.iloc[:, 0].to_list() + ['label', 'unknown']
         df = pd.read_csv(path, names=headers).drop(
+
             ['protocol_type', 'service', 'flag'], axis=1)
 
         X = df.iloc[:, :-2].to_numpy()
         y = np.array(df['label'] != 'normal')
-
         if (idx is not None) and train:
             X = X[idx]
             y = y[idx]

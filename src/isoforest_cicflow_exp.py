@@ -69,7 +69,8 @@ class IsoForestCICFlowExp(tune.Trainable):
         val_labels, val_scores = self.isoforest.test(
             self.dataset,
             device=self.cfg["device"],
-            n_jobs_dataloader=self.cfg["n_jobs_dataloader"])
+            n_jobs_dataloader=self.cfg["n_jobs_dataloader"],
+            val=True)
         test_labels, test_scores = self.isoforest.test(
             self.dataset,
             device=self.cfg["device"],
@@ -271,18 +272,18 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
     data_path = os.path.abspath(data_path)
     n_splits = 4
 
-    # period = np.array([
-    #     '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
-    #     '2019-11-14', '2019-11-15'
-    # ])
     period = np.array([
-        '2019-11-08', '2019-11-09', '2019-11-11','2019-11-12'
+        '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
+        '2019-11-14', '2019-11-15'
     ])
+    # period = np.array([
+    #     '2019-11-08', '2019-11-09', '2019-11-11','2019-11-12'
+    # ])
 
     test_dates = period[-1:]
     train_dates = _get_train_val_split(period[:-2], validation, n_splits)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cpu')
     exp_config = {
         **locals().copy(),
         'net_name': 'cicflow_mlp',
