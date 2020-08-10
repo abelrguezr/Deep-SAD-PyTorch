@@ -81,8 +81,14 @@ class SVDDKDDExp(tune.Trainable):
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
         }
+        
+        ratios = {
+            phase + '_ratio_anomalies': get_ratio_anomalies(labels)
+            for phase in ["val", "test", "train"]
+            for labels, _, _ in [self.model.trainer.get_results(phase)]
+        }
 
-        prs = {
+        prc = {
             phase + '_auc_pr': auc(recall, precision)
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
@@ -90,7 +96,36 @@ class SVDDKDDExp(tune.Trainable):
             [precision_recall_curve(labels, scores)]
         }
 
-        return {**rocs, **prs}
+        get_f1 = lambda pr, rec: 2 * (pr * rec) / (pr + rec)
+        max_f1 = lambda pr, rec: max(get_f1(pr, rec))
+        idx_max_f1 = lambda pr, rec: np.argmax(
+            get_f1(pr, rec)[~np.isnan(get_f1(pr, rec))])
+
+        f1s = {
+            phase + '_max_f1': max_f1(precision, recall)
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+        prs = {
+            phase + '_precision_max_f1':
+            precision[idx_max_f1(precision, recall)]
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        recs = {
+            phase + '_recall_max_f1': recall[idx_max_f1(precision, recall)]
+            for phase in ["val", "test", "train"]
+            for labels, scores, _ in [self.model.trainer.get_results(phase)]
+            for precision, recall, _ in
+            [precision_recall_curve(labels, scores)]
+        }
+
+        return {**rocs, **ratios, **prc, **prs, **recs, **f1s}
 
     def _save(self, checkpoint_dir):
         checkpoint_path = os.path.join(checkpoint_dir,

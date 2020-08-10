@@ -285,7 +285,7 @@ class DeepSVDDTrainer(BaseTrainer):
         return self._get_output(
                 test_loader, net)
 
-    def _get_results(self, phase='val'):
+    def get_results(self, phase='val'):
         if phase == 'val':
             return self.val_labels, self.val_scores, self.val_loss
         elif phase == 'train':
