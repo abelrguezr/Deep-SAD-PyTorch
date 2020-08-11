@@ -2,6 +2,7 @@ import click
 import os
 import pandas as pd
 import torch
+from utils.misc import get_ratio_anomalies
 import logging
 import random
 import numpy as np
@@ -38,10 +39,9 @@ class IsoForestCICFlowExp(tune.Trainable):
 
         self.dataset = CICFlowADDataset(root=os.path.abspath(cfg['data_path']),
                                         n_known_outlier_classes=1,
-                                        train_dates=cfg['period'][train],
-                                        val_dates=cfg['period'][val],
                                         test_dates=test,
-                                        shuffle=True)
+                                        shuffle=True,
+                                        split=True)
 
         def get_data_from_loader(loader):
             X = ()
@@ -85,7 +85,7 @@ class IsoForestCICFlowExp(tune.Trainable):
             "test": (test_labels, test_scores)
         }
 
-                rocs = {
+        rocs = {
             phase + '_auc_roc': roc_auc_score(labels, scores)
             for phase in ["val", "test", "train"]
             for labels, scores, _ in [self.model.trainer.get_results(phase)]
@@ -290,24 +290,9 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
          ae_lr, ae_n_epochs, ae_lr_milestone, ae_batch_size, ae_weight_decay,
          num_threads, n_jobs_dataloader, normal_class, known_outlier_class,
          n_known_outlier_classes):
-    def _get_train_val_split(period, validation, n_splits=4):
-        if (validation == 'kfold'):
-            split = KFold(n_splits=n_splits)
-        elif (validation == 'time_series'):
-            split = TimeSeriesSplit(n_splits=n_splits)
-        else:
-            # Dummy object with split method that return indexes of train/test split 0.8/0.2. Similar to train_test_split without shuffle
-            split = type(
-                'obj', (object, ), {
-                    'split':
-                    lambda p: [([x for x in range(int(len(p) * 0.8))], [
-                        x for x in range(int(len(p) * 0.8), len(p))
-                    ])] * n_splits
-                })
-
-        return [(train, val) for train, val in split.split(period)]
 
     ray.init(address='auto')
+
 
     data_path = os.path.abspath(data_path)
     n_splits = 4
@@ -316,12 +301,16 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
         '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
         '2019-11-14', '2019-11-15'
     ])
-    # period = np.array([
-    #     '2019-11-08', '2019-11-09', '2019-11-11','2019-11-12'
-    # ])
 
-    test_dates = period[-1:]
-    train_dates = _get_train_val_split(period[:-2], validation, n_splits)
+    dates = period[:2]
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    exp_config = {
+        **locals().copy(),
+        'objective': 'soft-boundary'
+
+    }
 
     device = torch.device('cpu')
     exp_config = {
@@ -368,7 +357,7 @@ def main(data_path, experiment_path, load_model, ratio_known_normal,
                           metric="val_auc_pr")
 
     analysis = tune.run(IsoForestCICFlowExp,
-                        name="IsoForestCICFlowExp",
+                        name="OneDayIsoForestCICFlowExp",
                         checkpoint_at_end=True,
                         checkpoint_freq=5,
                         stop={
