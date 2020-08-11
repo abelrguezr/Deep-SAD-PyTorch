@@ -71,20 +71,47 @@ class IsoForest(object):
         logger.info('Training Time: {:.3f}s'.format(self.results['train_time']))
         logger.info('Finished training.')
 
-    def test(self, dataset: BaseADDataset, device: str = 'cpu', n_jobs_dataloader: int = 0, val = False):
+    def test(self, dataset: BaseADDataset, device: str = 'cpu', n_jobs_dataloader: int = 0, set_split = 'test'):
+        if set_split == "train":
+            try:
+                train_loader, _, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+
+            except:
+                train_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            self.train_labels, self.train_scores, self.train_loss = self._test(
+                train_loader)
+
+        elif set_split == "val":
+            try:
+                _, val_loader, _ = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+
+                self.val_labels, self.val_scores, self.val_loss = self._test(
+                    val_loader)
+            except:
+                raise ValueError(
+                    "The dataset does not support validation DataLoader")
+        else:
+            try:
+                _, _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+            except:
+                _, test_loader = dataset.loaders(
+                    batch_size=self.batch_size,
+                    num_workers=self.n_jobs_dataloader)
+
+            self.test_labels, self.test_scores, self.test_loss = self._test(
+                test_loader)
+
+    def _test(self, loader, device: str = 'cpu'):
         """Tests the Isolation Forest model on the test data."""
         logger = logging.getLogger()
-
-        try:
-            _, val_loader, test_loader = dataset.loaders(
-                    batch_size=128,
-                    num_workers=0)
-            loader = val_loader if val else test_loader
-        
-        except:
-            _, loader = dataset.loaders(
-                    batch_size=128,
-                    num_workers=0)
 
         # Get data from loader
         idx_label_score = []
@@ -119,12 +146,8 @@ class IsoForest(object):
         scores = np.array(scores)
         self.results['auc_roc'] = roc_auc_score(labels, scores)
 
-        # # Log results
-        # logger.info('Test AUC: {:.2f}%'.format(100. * self.results['test_auc']))
-        # logger.info('Test Time: {:.3f}s'.format(self.results['test_time']))
-        # logger.info('Finished testing.')
-
-        return labels, scores
+ 
+        return labels, scores, scores
 
     def load_ae(self, dataset_name, model_path):
         """Load pretrained autoencoder from model_path for feature extraction in a hybrid Isolation Forest model."""
