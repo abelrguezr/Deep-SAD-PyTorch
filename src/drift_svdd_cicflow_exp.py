@@ -144,10 +144,6 @@ class OneDaySVDDCICFlowExp(tune.Trainable):
 ################################################################################
 @click.command()
 @click.argument('data_path', type=click.Path(exists=True))
-@click.option('--load_model',
-              type=click.Path(exists=True),
-              default=None,
-              help='Model file path (default: None).')
 @click.option('--experiment_path',
               type=click.Path(exists=True),
               default='~/ray_results',
@@ -174,6 +170,7 @@ def main(data_path, experiment_path, model_path, params_path):
 
     exp_config = {
         **locals().copy(),
+        **cfg,
         'objective': 'soft-boundary',
         'net_name':'cicflow_mlp_2',
 
@@ -186,6 +183,9 @@ def main(data_path, experiment_path, model_path, params_path):
         torch.cuda.manual_seed(exp_config['seed'])
         torch.backends.cudnn.deterministic = True
 
+    dates = ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
+        '2019-11-14', '2019-11-15','2019-11-16','2019-11-17','2019-11-18','2019-11-19']
+
     ax = AxClient(enforce_sequential_optimization=False)
     ax.create_experiment(
         name="SVDDCICFlowExp",
@@ -193,8 +193,7 @@ def main(data_path, experiment_path, model_path, params_path):
             {
                 "name": "dates",
                 "type": "choice",
-                "values": ['2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
-        '2019-11-14', '2019-11-15']
+                "values": dates
             },
         ],
         objective_name="val_auc_pr",
@@ -205,12 +204,12 @@ def main(data_path, experiment_path, model_path, params_path):
     analysis = tune.run(OneDaySVDDCICFlowExp,
                         name="DriftSVDDCICFlowExp",
                         checkpoint_at_end=True,
-                        checkpoint_freq=5,
+                        checkpoint_freq=1,
                         stop={
-                            "training_iteration": 50,
+                            "training_iteration": 1,
                         },
                         resources_per_trial={"gpu": 1},
-                        num_samples=10,
+                        num_samples=len(dates),
                         local_dir=experiment_path,
                         search_alg=search_alg,
                         config=exp_config)
