@@ -85,7 +85,8 @@ class DriftCICFlowExp(tune.Trainable):
                        device=self.params['device'],
                        n_jobs_dataloader=self.cfg["n_jobs_dataloader"])
 
-        self.model.test(self.dataset, val=False)
+        self.model.test(self.dataset, set_split="test")
+        self.model.test(self.dataset, set_split="train")
 
         test_labels, test_scores, _ = self.model.trainer.get_results("test")
 
@@ -148,11 +149,12 @@ def main(data_path, experiment_path, model_path, params_path, seed):
     ray.init(address='auto')
 
     data_path = os.path.abspath(data_path)
+    params_path = os.path.abspath(params_path)
     experiment_path = os.path.abspath(experiment_path)
     model_path = os.path.abspath(model_path)
     n_splits = 4
 
-    dates = np.array(['2019-11-08', '2019-11-09'])
+    dates = np.array(['2019-11-09', '2019-11-11'])
     # period = np.array([
     #     '2019-11-08', '2019-11-09', '2019-11-11', '2019-11-12', '2019-11-13',
     #     '2019-11-14', '2019-11-15'
